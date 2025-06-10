@@ -1,0 +1,53 @@
+SMEAC: Operation AGENT FORGE
+1. (S) Situation
+
+General: This operation is a time-constrained development sprint designed to create a functional, local-first AI agent. The operational environment is a single, offline-capable local machine.
+Adversary Forces: The primary adversary is the 48-hour time limit. Secondary adversaries include technical complexity, software bugs, performance bottlenecks inherent in local model hosting, and potential for developer fatigue.
+Friendly Forces: You are the sole developer (callsign: "ARCHITECT"). You are supported by one AI Co-Developer (callsign: "GEMINI") for strategic planning, code generation, and debugging. Your primary development environment and hardware (the "Forge") are assumed to be prepared and functional.
+Attachments/Detachments: None. This is a self-contained operation.
+2. (M) Mission
+
+ARCHITECT will design, build, test, and document a functional, local-first agentic AI system within a 48-hour period, commencing upon receipt of this order. The resulting agent (V0.1) will be capable of conversational interaction, performing Retrieval-Augmented Generation (RAG) against a local database, and executing database write actions with human-in-the-loop verification. The purpose is to produce a demonstrable prototype and validate rapid, AI-assisted development methodologies in a local environment.
+
+3. (E) Execution
+
+a. Commander's Intent: The intent is to favor speed and functionality over perfection. The end state is a working, demonstrable agent, not a production-hardened application. Forward progress is the key metric of success. The principle "Done is better than perfect" will guide all decisions.
+
+b. Concept of Operations: This operation will be conducted in two phases across six distinct blocks. Day 1 (Phase I) focuses on establishing the agent's internal knowledge and reasoning (Mind & Memory). Day 2 (Phase II) focuses on enabling the agent to interact with and act upon its environment (Action & Voice). The AI Co-Developer GEMINI is to be leveraged throughout all blocks to accelerate execution.
+
+c. Scheme of Maneuver:
+
+Block I: The Blueprint (Hours 00:00-04:00): Establish agent domain and database schema. Generate and populate the local SQLite database.
+Block II: The Forge (Hours 04:00-12:00): Generate vector embeddings from the database using a local, specialized Hugging Face model. Create and persist the ChromaDB vector store.
+Block III: The Spark (Hours 12:00-24:00): Develop the core RAG chain. Connect LangChain to the local LM Studio server. Achieve basic conversational ability based on the vectorized knowledge.
+Block IV: The Hands (Hours 24:00-34:00): Develop and integrate agent "tools." Create the primary tool for writing to the SQLite database, ensuring a human-in-the-loop verification step is mandatory.
+Block V: The Voice (Hours 34:00-42:00): Develop tools for live state awareness (e.g., counting database rows). Refine the user interface (CLI or basic Streamlit).
+Block VI: The Final Test (Hours 42:00-48:00): Conduct integration testing. Perform adversarial "red team" questioning. Produce a README.md file documenting setup and usage.
+d. Coordinating Instructions:
+
+The timeline is a guide; accelerate if milestones are met early.
+Strict adherence to the local-first principle is paramount. No reliance on external APIs for core agent functionality.
+A phase is considered complete only after the milestone for that block is successfully tested and verified.
+4. (A) Administration & Logistics
+
+Administration: Developer is responsible for their own work/rest cycle and sustenance.
+Logistics: Ensure the following resources are staged and ready prior to H-Hour (the start of the 48-hour clock):
+Hardware: A computer with a minimum of 16GB RAM. GPU is recommended but not required.
+Software (Pre-installed/Downloaded):
+Python 3.10+ with required libraries (langchain, langchain-community, chromadb, sentence-transformers, etc.).
+LM Studio.
+One primary LLM (e.g., Llama 3 8B Instruct GGUF) downloaded within LM Studio.
+One specialized embedding model (e.g., all-MiniLM-L6-v2) will be downloaded on first use by the script.
+Accounts: A functional Google account to access GEMINI.
+5. (C) Command & Signal
+
+Command:
+
+ARCHITECT is the operation commander and holds final decision-making authority.
+GEMINI serves as a support element and advisor.
+Signal (Communications Plan):
+
+Primary command channel is the developer's direct interaction with the IDE/terminal.
+Primary support channel is the Gemini web interface.
+To maintain communication clarity, establish separate, specialized chat threads with GEMINI for distinct operational tasks (e.g., "DB Architecture," "RAG Coding," "QA Testing"). This prevents context bleed and ensures focused support.
+Operation reports (e.g., README.md, demo video) are the final signal indicating mission completion.
