@@ -1,2 +1,3 @@
 *.db
 .venv/
+chroma_db/
