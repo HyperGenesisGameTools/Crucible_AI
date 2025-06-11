@@ -1,17 +1,28 @@
 # Crucible AI: A Local-First Agentic Project Manager
 
-Crucible AI is a proof-of-concept for a fully local, agentic AI system designed for project management. This agent can reason about tasks, projects, and users stored in a local database. It uses a Retrieval-Augmented Generation (RAG) pipeline to answer questions and is being expanded to take actions, like creating new tasks, based on conversational commands.
+Crucible AI is a proof-of-concept for a fully local, agentic AI system designed for project management. This agent can reason about tasks, projects, and users stored in a local database. It uses a Retrieval-Augmented Generation (RAG) pipeline to answer questions and is equipped with tools to take actions, like creating new tasks, based on conversational commands.
 
 The entire system runs on your local machine with no required external API calls for its core functionality, ensuring privacy and offline capability.
+
+## Key Features
+
+* **Local First**: All components, from the language model to the database, run on your local machine.
+* **Conversational Q&A**: Ask questions about your projects and tasks in natural language.
+* **Agentic Actions**: Instruct the agent to perform actions, such as creating new tasks.
+* **Human-in-the-Loop**: Confirms with the user before executing any action that modifies the database.
+* **Modular Architecture**: The system is composed of several independent scripts that can be run for different purposes.
 
 ## Architecture Overview
 
 The agent's "mind" is composed of several distinct parts that work together:
 
-1.  **Database (`project_tasks.db`):** A simple SQLite database holds the structured data for all projects, users, and tasks. The schema is created and populated by `setup_db.py`.
-2.  **Memory (`chroma_db/`):** To allow the agent to perform semantic searches over the data, the tasks are converted into vector embeddings using a local `sentence-transformers` model. These embeddings are stored in a ChromaDB vector store, which acts as the agent's long-term memory. This process is handled by `embed_db.py`.
-3.  **Reasoning Engine (Local LLM):** The agent's "brain" is a Large Language Model (LLM) running locally via **LM Studio**. This provides the conversational and reasoning capabilities.
-4.  **Cognitive Loop (`main.py`):** LangChain is used to orchestrate the agent's operations. It connects the user's query to the **Reasoning Engine** and the **Memory**, creating a RAG pipeline that allows the agent to find relevant information and formulate an answer.
+1.  **Database (`project_tasks.db`)**: A simple SQLite database holds the structured data for all projects, users, and tasks. The schema is created and populated by `setup_db.py`.
+2.  **Memory (`chroma_db/`)**: To allow the agent to perform semantic searches over the data, the tasks are converted into vector embeddings using a local `sentence-transformers` model. These embeddings are stored in a ChromaDB vector store, which acts as the agent's long-term memory. This process is handled by `embed_db.py`.
+3.  **Reasoning Engine (Local LLM)**: The agent's "brain" is a Large Language Model (LLM) running locally via **LM Studio**. This provides the conversational and reasoning capabilities.
+4.  **Cognitive Architecture (LangChain)**: LangChain is used to orchestrate the agent's operations, connecting the user's query to the **Reasoning Engine** and the **Memory**. There are three primary cognitive loops:
+    * `main.py`: A simple RAG pipeline for read-only conversational Q&A.
+    * `agent_main.py`: A more advanced agent with tools for adding tasks and listing users, featuring a human-in-the-loop confirmation step.
+    * `merged_agent.py`: The most capable agent, combining the knowledge retrieval of the RAG pipeline with the action-taking capabilities of the other agents.
 
 ## How to Use
 
@@ -20,15 +31,15 @@ Follow these steps to set up and run the Crucible AI agent.
 ### 1. Prerequisites
 
 * **Python 3.10+**
-* **LM Studio:** Download and install from [lmstudio.ai](https://lmstudio.ai/).
+* **LM Studio**: Download and install from [lmstudio.ai](https://lmstudio.ai/).
     * Inside LM Studio, download a GGUF-compatible model (e.g., `Llama-3-8B-Instruct-GGUF`).
     * Go to the "Local Server" tab (the `<->` icon) and start the server. Make sure the model you downloaded is loaded at the top.
 
 ### 2. Install Dependencies
 
-Clone the repository and install the required Python packages.
+Clone the repository and install the required Python packages from the `requirements.txt` file.
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
@@ -36,7 +47,7 @@ pip install -r requirements.txt
 
 This script creates the `project_tasks.db` file and fills it with sample data.
 
-```
+```bash
 python setup_db.py
 ```
 
@@ -44,19 +55,21 @@ python setup_db.py
 
 This script reads the data from the database, generates vector embeddings, and saves them to a local vector store.
 
-```
+```bash
 python embed_db.py
 ```
 
-### 5. Chat with the Agent
+### 5. Running the Agent
 
-Now you can run the main application and start a conversation with your agent.
+You can run the agent in one of three modes.
 
-```
+#### Mode 1: Simple Q&A (Read-Only)
+
+This mode is for asking questions about the data.
+
+```bash
 python main.py
 ```
-
-The script will connect to your local LLM server. Once it's ready, you can ask questions about the project data.
 
 **Example Questions:**
 
@@ -64,6 +77,33 @@ The script will connect to your local LLM server. Once it's ready, you can ask q
 * "Are there any high-priority tasks?"
 * "Summarize the 'AI Agent Development' project."
 
-## Next Steps: Agentic Actions
+#### Mode 2: Agent with Task Creation
 
-The current implementation allows the agent to answer questions (read-only). The next phase of development (Block IV) is to give the agent **tools** to act upon its environment, starting with the ability to create new tasks in the database through natural language commands.
+This agent can create new tasks and list users.
+
+```bash
+python agent_main.py
+```
+
+**Example Commands:**
+
+* "Add a new task to design the user interface for the website redesign project and assign it to Jane Doe."
+* "List all available users."
+
+#### Mode 3: Merged Agent (Q&A + Actions)
+
+This is the most capable agent, combining the features of the other two.
+
+```bash
+python merged_agent.py
+```
+
+**Example Interactions:**
+
+* You: "Who is working on the AI Agent Development project?"
+* Agent: "John Doe is assigned to several tasks in that project."
+* You: "Great. Please add a new task for him to 'research new embedding models'."
+
+## Development Roadmap
+
+The `Crucible_AI_SMEAC.txt` file outlines the original 48-hour development plan for this project, detailing the mission, execution, and technical requirements. It serves as a comprehensive guide to the project's inception and goals.
