@@ -1,10 +1,12 @@
 import sqlite3
 import sys
 from sqlite3 import Error
+from typing import List
 
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
-from langchain.tools import Tool
+# We will use StructuredTool to handle functions with multiple arguments
+from langchain.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 
 # --- CONFIGURATION ---
@@ -14,8 +16,9 @@ DUMMY_API_KEY = "lm-studio"
 MODEL_NAME = "local-model"
 
 
-# 1. PYTHON FUNCTION TO ADD A NEW TASK
-# =======================================
+# 1. PYTHON FUNCTIONS FOR DATABASE INTERACTION
+# ===============================================================
+
 def add_new_task(
     title: str,
     description: str,
@@ -78,20 +81,46 @@ def add_new_task(
             conn.close()
 
 
-# 2. CONVERT THE FUNCTION INTO A LANGCHAIN TOOL
-# ==============================================
-# The 'description' is crucial; it's how the agent knows what the tool is for.
-add_task_tool = Tool(
-    name="add_new_task_to_database",
-    func=add_new_task,
-    description="""
-    Use this tool when you need to create and add a new task to the project management database.
-    It requires all of the following arguments:
-    - title (string): The title of the new task.
-    - description (string): A detailed description for the new task.
-    - project_id (integer): The ID of the project the task is associated with.
-    - assignee_id (integer): The ID of the user assigned to complete the task.
+def list_users() -> str:
     """
+    Retrieves a list of all users from the database.
+    This tool is useful for finding the correct 'assignee_id' for a new task.
+    It takes no arguments.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row  # Access columns by name
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, email FROM users")
+        rows = cursor.fetchall()
+        
+        if not rows:
+            return "No users found in the database."
+
+        # Format the output into a readable string
+        user_list = "\n".join([f"- ID: {row['id']}, Name: {row['name']}, Email: {row['email']}" for row in rows])
+        return f"Available users:\n{user_list}"
+
+    except Error as e:
+        return f"Database error: {e}"
+    finally:
+        if conn:
+            conn.close()
+
+
+# 2. CONVERT THE FUNCTIONS INTO LANGCHAIN TOOLS
+# =================================================================
+add_task_tool = StructuredTool.from_function(
+    func=add_new_task,
+    name="add_new_task_to_database",
+    description="Use this tool to create and add a new task to the database. It requires a title, description, project_id, and assignee_id."
+)
+
+list_users_tool = StructuredTool.from_function(
+    func=list_users,
+    name="list_available_users",
+    description="Use this tool to get a list of all available users and their corresponding IDs. This is helpful when you need to find the 'assignee_id' for a task."
 )
 
 
@@ -118,28 +147,39 @@ def main():
         sys.exit(1)
 
     # --- Combine tools for the agent ---
-    tools = [add_task_tool]
+    tools = [add_task_tool, list_users_tool]
 
     # --- Create the Agent Prompt Template ---
-    # This prompt guides the agent's reasoning process.
+    # This prompt is more explicit and includes the required 'tool_names' variable.
     prompt_template = """
-    You are an assistant that helps manage tasks.
-    Respond to the user's request using the available tools.
+    You are a helpful assistant for managing tasks. You have two primary capabilities:
+    1. List all available users to find out their `assignee_id`.
+    2. Add a new task to the database.
+
+    **TOOL USAGE FLOW:**
+    - If a user asks to create a task but does not provide an `assignee_id`, you MUST first use the `list_available_users` tool.
+    - Review the output from `list_available_users` to find the correct `assignee_id` based on the user's request.
+    - Once you have the `assignee_id`, use the `add_new_task_to_database` tool with all the required information.
+    - If the user simply asks who is available, use the `list_available_users` tool and provide the output as the final answer.
 
     TOOLS:
     ------
     {tools}
 
-    To use a tool, please use the following format:
+    To use a tool, you MUST use the following format:
 
-    Thought: Do I need to use a tool? Yes
-    Action: The action to take. Should be one of [{tool_names}]
-    Action Input: The input to the action
-    Observation: The result of the action
+    Thought: [Your reasoning on which tool to use and why]
+    Action: The action to take, must be one of [{tool_names}].
+    Action Input: {{
+      "arg_name_1": "value1",
+      "arg_name_2": 123
+    }}
 
-    When you have a response to say to the user, or if you don't need to use a tool, you MUST use the format:
+    IMPORTANT: The 'Action Input' must be a single, valid JSON object. For tools that take no arguments, use an empty JSON object: {{}}.
 
-    Thought: Do I need to use a tool? No
+    When you have a response to say to the user, you MUST use the format:
+
+    Thought: I now have the final answer.
     Final Answer: [your response here]
 
     Begin!
@@ -163,13 +203,13 @@ def main():
 
     # --- Interactive Chat Loop ---
     print("\n--- Agent is Ready ---")
-    print("Ask me to add a task. For example: 'Add a task to fix the login bug for project 1 and assign it to user 2.'")
+    print("You can ask me to 'list the available users' or 'add a task for user X'.")
     print("Type 'exit' or 'quit' to end.")
 
     while True:
         try:
             user_input = input("\nYou: ")
-            if user_input.lower() in ["exit", "quit"]:
+            if user_input.lower() in ["exit", 'quit']:
                 print("Exiting agent. Goodbye!")
                 break
 
