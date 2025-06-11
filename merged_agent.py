@@ -1,8 +1,9 @@
-# merged_agent.py (Modified)
+# merged_agent.py (Modified for Memory Manager Integration)
 import os
 import sys
 import sqlite3
 import re
+from multiprocessing import Queue
 from langchain import hub
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.tools import Tool
@@ -11,21 +12,31 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from sqlite3 import Error
 
-# Assume PromptContext class from the previous snippet is in a file named prompt_context.py
 from prompt_context import PromptContext
 
-# --- CONFIGURATION (remains the same) ---
+# --- CONFIGURATION ---
 DB_FILE = "project_tasks.db"
 CHROMA_PERSIST_DIR = "./chroma_db"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 LOCAL_LLM_URL = "http://localhost:1234/v1"
 DUMMY_API_KEY = "lm-studio"
 MODEL_NAME = "local-model"
+MODEL_TEMP = 0.4
 
-# --- AGENT STATE (remains the same) ---
+# --- AGENT STATE ---
 agent_executor = None
+# This queue will be set by the main bot.py script.
+memory_queue: Queue = None
 
-# --- DATABASE HELPER FUNCTIONS (remains the same) ---
+def set_memory_queue(queue: Queue):
+    """
+    Allows the main application process to pass the multiprocessing
+    queue to this module.
+    """
+    global memory_queue
+    memory_queue = queue
+
+# --- DATABASE HELPER FUNCTIONS (Unchanged) ---
 def create_connection(db_file):
     conn = None
     try:
@@ -35,7 +46,21 @@ def create_connection(db_file):
         print(f"Error connecting to database: {e}")
     return conn
 
-# ... (get_project_id_by_name, get_user_id_by_name, and all tools remain the same) ...
+def get_project_id_by_name(conn, project_name):
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM projects WHERE name = ?", (project_name,))
+    result = cursor.fetchone()
+    return result[0] if result else None
+
+def get_user_id_by_name(conn, user_name):
+    cursor = conn.cursor()
+    # This is a simple search, might need to be more robust for full names
+    cursor.execute("SELECT id FROM users WHERE name LIKE ?", (f"%{user_name}%",))
+    result = cursor.fetchone()
+    return result[0] if result else None
+
+
+# --- AGENT TOOLS (MODIFIED) ---
 
 def reply_to_user(message: str) -> str:
     """
@@ -45,7 +70,6 @@ def reply_to_user(message: str) -> str:
     The input should be your exact response to the user.
     """
     print(f"\n>> Replying to user with: '{message}'")
-    # This response is for the agent's internal reasoning, confirming the action was taken.
     return f"This was your response to the user: '{message}'. You should now provide this as your final answer."
 
 def knowledge_base_retriever(input_str: str) -> str:
@@ -56,10 +80,7 @@ def knowledge_base_retriever(input_str: str) -> str:
     """
     print(f"\n>> Raw retriever input: '{input_str}'")
     match = re.search(r'query="([^"]*)"', input_str)
-    if match:
-        query = match.group(1)
-    else:
-        query = input_str
+    query = match.group(1) if match else input_str
     print(f"\n>> Searching Knowledge Base for: '{query}'")
 
     if not os.path.exists(CHROMA_PERSIST_DIR):
@@ -81,14 +102,12 @@ def list_users() -> str:
     """
     print("\n>> Listing all users...")
     conn = create_connection(DB_FILE)
-    if not conn:
-        return "Error: Could not connect to the database."
+    if not conn: return "Error: Could not connect to the database."
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, email FROM users")
     users = cursor.fetchall()
     conn.close()
-    if not users:
-        return "No users found in the database."
+    if not users: return "No users found in the database."
     return "\n".join([f"- ID: {user['id']}, Name: {user['name']}, Email: {user['email']}" for user in users])
 
 def add_task(title: str, project_name: str, assignee_name: str, description: str = "", priority: str = "Medium", status: str = "To Do") -> str:
@@ -98,44 +117,46 @@ def add_task(title: str, project_name: str, assignee_name: str, description: str
     """
     print(f"\n>> Adding new task: '{title}'")
     conn = create_connection(DB_FILE)
-    if not conn:
-        return "Error: Could not connect to the database."
+    if not conn: return "Error: Could not connect to the database."
 
     project_id = get_project_id_by_name(conn, project_name)
-    if not project_id:
-        return f"Error: Project '{project_name}' not found."
+    if not project_id: return f"Error: Project '{project_name}' not found."
     
     assignee_id = get_user_id_by_name(conn, assignee_name)
-    if not assignee_id:
-        return f"Error: User '{assignee_name}' not found."
+    if not assignee_id: return f"Error: User '{assignee_name}' not found."
 
     try:
         cursor = conn.cursor()
         cursor.execute(
-            """
-            INSERT INTO tasks (title, description, status, priority, project_id, assignee_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
+            "INSERT INTO tasks (title, description, status, priority, project_id, assignee_id) VALUES (?, ?, ?, ?, ?, ?)",
             (title, description, status, priority, project_id, assignee_id),
         )
         conn.commit()
         task_id = cursor.lastrowid
         conn.close()
+
+        # --- NEW: SEND UPDATE SIGNAL TO MEMORY MANAGER ---
+        if memory_queue:
+            print(f"   -> Sending 'add' signal for task_id: {task_id} to memory manager.")
+            memory_queue.put({"action": "add", "task_id": task_id})
+        else:
+            print("   -> WARNING: Memory queue not available. Change will not be reflected in real-time.")
+        
         return f"Successfully added new task '{title}' with ID {task_id} to project '{project_name}', assigned to {assignee_name}."
-    except sqlite3.IntegrityError as e:
+    except sqlite3.Error as e:
         return f"Error adding task: {e}"
 
 
-# --- AGENT INITIALIZATION (remains the same) ---
+# --- AGENT INITIALIZATION ---
 def initialize_agent():
     """
     Sets up the agent components (LLM, tools, prompt) and assigns the
     created agent executor to the global 'agent_executor' variable.
     """
     global agent_executor
-    # ... (rest of the initialization function is unchanged) ...
     print("--- Initializing The Crucible AI Agent ---")
     
+    # Prerequisite checks
     if not os.path.exists(DB_FILE):
         print(f"FATAL ERROR: Database file not found at '{DB_FILE}'. Please run setup_db.py first.")
         sys.exit(1)
@@ -144,26 +165,16 @@ def initialize_agent():
         sys.exit(1)
 
     try:
-        llm = ChatOpenAI(
-            base_url=LOCAL_LLM_URL, api_key=DUMMY_API_KEY, model=MODEL_NAME, temperature=0.2
-        )
+        llm = ChatOpenAI(base_url=LOCAL_LLM_URL, api_key=DUMMY_API_KEY, model=MODEL_NAME, temperature=MODEL_TEMP)
         print("Successfully connected to local LLM server.")
     except Exception as e:
         print(f"FATAL ERROR: Could not connect to LLM server: {e}")
         sys.exit(1)
         
     tools = [
-        Tool(
-            name="Reply",
-            func=reply_to_user,
-            description="Use this tool for general conversation, greetings, or when no other tool is appropriate. The input should be your direct response to the user."
-        ),
-        Tool(
-            name="KnowledgeBaseRetriever",
-            func=knowledge_base_retriever,
-            description="Use this to retrieve context about existing tasks, projects, status, or assignees from the project knowledge base. It's the best tool for answering specific questions about project data."
-        ),
-        Tool(name="ListUsers", func=list_users, description="Use this to get a list of all available users who can be assigned to tasks."),
+        Tool(name="Reply", func=reply_to_user, description="..."),
+        Tool(name="KnowledgeBaseRetriever", func=knowledge_base_retriever, description="..."),
+        Tool(name="ListUsers", func=list_users, description="..."),
         Tool(name="AddTask", func=add_task, description="Use this tool to create a new task. Requires a title, project_name, and assignee_name."),
     ]
 
@@ -180,8 +191,7 @@ def initialize_agent():
     print("Agent initialized successfully.")
 
 
-# --- MODIFIED AGENT INVOCATION ---
-
+# --- AGENT INVOCATION (Unchanged) ---
 def invoke_agent(query: str, context: PromptContext) -> str:
     """
     Invokes the agent with a given query and context, returning the final output.
@@ -190,60 +200,32 @@ def invoke_agent(query: str, context: PromptContext) -> str:
     if not agent_executor:
         return "Error: Agent is not initialized. Please run initialize_agent() first."
     
-    # Format the context and prepend it to the user's query
     context_str = context.format_for_prompt()
     combined_input = f"{context_str}{query}"
     
     try:
-        print(f"--- Invoking Agent with Combined Input ---")
-        print(combined_input)
-        print("-----------------------------------------")
-        
+        print(f"--- Invoking Agent with Combined Input ---\n{combined_input}\n-----------------------------------------")
         result = agent_executor.invoke({"input": combined_input})
-        
-        # You might want to update the context here based on the interaction
-        # For example, add the query and response to the current_context
-        # context.current_context += f"\nUser: {query}\nAI: {result.get('output')}"
-
         return result.get('output', "Error: No output from agent.")
     except Exception as e:
         print(f"An error occurred during agent invocation: {e}")
         return "Sorry, I encountered an error while processing your request."
 
-# --- MAIN CHAT LOOP FOR COMMAND-LINE TESTING (MODIFIED) ---
+# --- MAIN CHAT LOOP FOR COMMAND-LINE TESTING (Unchanged) ---
 def main():
-    """
-    Main function for command-line interaction.
-    Initializes the agent and then enters a chat loop.
-    """
     initialize_agent()
-    
-    # Create a single PromptContext instance for the session
     session_context = PromptContext()
-    # You could potentially pre-load the background briefing here
-    session_context.background_briefing = "The user is the project manager, ARCHITECT. The AI is Crucible, a helpful project management assistant."
-
+    session_context.background_briefing = "The user is ARCHITECT. The AI is Crucible."
     print("\n--- Agent Interface Ready ---")
-    print("Ask about tasks, or ask to add a new task. Type 'exit' to end.")
     while True:
         try:
             query = input("\nYou: ")
-            if query.lower() in ["exit", "quit"]:
-                print("Exiting. Goodbye!")
-                break
-            
-            # Pass the query and the context object to the agent
+            if query.lower() in ["exit", "quit"]: break
             response = invoke_agent(query, session_context)
-            
             print(f"\nAgent: {response}")
-
-        except KeyboardInterrupt:
-            print("\nExiting. Goodbye!")
+        except (KeyboardInterrupt, EOFError):
             break
-        except Exception as e:
-            print(f"\nAn error occurred: {e}")
-            break
+    print("\nExiting. Goodbye!")
 
 if __name__ == "__main__":
     main()
-

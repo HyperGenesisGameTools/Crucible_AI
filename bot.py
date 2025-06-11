@@ -1,11 +1,13 @@
 import discord
 import os
 import asyncio
+import multiprocessing
 from dotenv import load_dotenv
 
 # Import the functions and classes from your agent and memory scripts
-from merged_agent import initialize_agent, invoke_agent
+from merged_agent import initialize_agent, invoke_agent, set_memory_queue
 from prompt_context import PromptContext
+from memory_manager import memory_worker
 
 # --- DISCORD BOT SETUP ---
 
@@ -20,12 +22,11 @@ if not TOKEN:
 # Define the intents your bot needs. The 'message_content' intent is crucial.
 intents = discord.Intents.default()
 intents.messages = True
-intents.message_content = True 
+intents.message_content = True
 
 client = discord.Client(intents=intents)
 
 # This dictionary will store a separate PromptContext object for each user.
-# The key will be the user's Discord ID, and the value will be the PromptContext instance.
 prompt_context_per_user = {}
 
 
@@ -35,9 +36,8 @@ async def on_ready():
     This function runs when the bot has successfully connected to Discord.
     """
     print(f'Bot logged in as {client.user}')
-    print('Initializing the Crucible AI Agent for Discord...')
-    # Initialize the agent once on startup.
-    initialize_agent()
+    # The agent is now initialized in the main execution block
+    # to ensure it happens after the memory manager process is started.
     print('Crucible AI Agent is ready and listening.')
     print('---')
 
@@ -60,17 +60,14 @@ async def on_message(message):
         if user_id not in prompt_context_per_user:
             print(f"Creating new conversation context for user: {message.author.name} ({user_id})")
             prompt_context_per_user[user_id] = PromptContext()
-            # Optional: You can set a default background briefing for a user's first interaction.
             prompt_context_per_user[user_id].background_briefing = (
                 f"This is a conversation with the user named {message.author.name}. "
                 "The AI is a project management assistant named Crucible. "
                 "The user is likely a project manager."
             )
         
-        # Retrieve the specific context for this user.
         user_context = prompt_context_per_user[user_id]
         
-        # Let the user know the bot is working on the request
         async with message.channel.typing():
             print(f"Received query from {message.author}: {message.content}")
 
@@ -90,7 +87,6 @@ async def on_message(message):
                 agent_response = await asyncio.to_thread(invoke_agent, clean_query, user_context)
 
                 # 6. Update the user's current context with the latest exchange.
-                # This helps the agent remember the flow of this specific conversation.
                 user_context.current_context += f"\nUser: {clean_query}\nAI: {agent_response}"
 
             except Exception as e:
@@ -105,9 +101,42 @@ async def on_message(message):
 
 def main():
     """
-    Main function to start the bot.
+    Main function to set up the multiprocessing environment and start the bot.
     """
-    print("Starting Discord bot...")
+    print("--- Starting Crucible AI System ---")
+
+    # Use 'spawn' start method for compatibility across platforms (macOS, Windows)
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+        print("[Main] Set multiprocessing start method to 'spawn'.")
+    except RuntimeError:
+        print("[Main] Multiprocessing context already set.")
+
+
+    # 1. Create the communication queue for the memory manager
+    memory_update_queue = multiprocessing.Queue()
+
+    # 2. Start the memory manager as a separate, long-running process
+    # The 'daemon=True' flag ensures it shuts down when the main script exits.
+    manager_process = multiprocessing.Process(
+        target=memory_worker,
+        args=(memory_update_queue,),
+        daemon=True
+    )
+    manager_process.start()
+    print("[Main] Memory Manager process started.")
+
+    # 3. Provide the agent module with the queue for its tools to use
+    set_memory_queue(memory_update_queue)
+    print("[Main] Memory update queue has been passed to the agent.")
+
+    # 4. Initialize the agent's components (LLM, tools, etc.)
+    # This must happen in the main process after the queue is set.
+    print("[Main] Initializing the Crucible AI Agent for Discord...")
+    initialize_agent()
+
+    # 5. Start the Discord bot
+    print("[Main] Starting Discord bot...")
     client.run(TOKEN)
 
 if __name__ == "__main__":
