@@ -18,13 +18,18 @@ LOCAL_LLM_URL = "http://localhost:1234/v1"
 DUMMY_API_KEY = "lm-studio"
 MODEL_NAME = "local-model"
 
+# --- AGENT STATE ---
+# This will hold the initialized agent so it doesn't need to be reloaded.
+agent_executor = None
+
 # --- DATABASE HELPER FUNCTIONS ---
 
 def create_connection(db_file):
     """Create a database connection to the SQLite database."""
     conn = None
     try:
-        conn = sqlite3.connect(db_file)
+        # Allow multithreaded access for web frameworks/bots
+        conn = sqlite3.connect(db_file, check_same_thread=False)
         conn.row_factory = sqlite3.Row
     except Error as e:
         print(f"Error connecting to database: {e}")
@@ -47,6 +52,17 @@ def get_user_id_by_name(conn, user_name):
 
 # --- AGENT TOOLS ---
 
+def reply_to_user(message: str) -> str:
+    """
+    Use this tool to provide a direct response or to have a general conversation with the user.
+    Use this when no other tool is suitable for the user's query, such as for greetings,
+    acknowledgements, or when you need to ask a clarifying question.
+    The input should be your exact response to the user.
+    """
+    print(f"\n>> Replying to user with: '{message}'")
+    # This response is for the agent's internal reasoning, confirming the action was taken.
+    return f"This was your response to the user: '{message}'. You should now provide this as your final answer."
+
 def knowledge_base_retriever(input_str: str) -> str:
     """
     Use this tool to retrieve information from the knowledge base about
@@ -54,8 +70,6 @@ def knowledge_base_retriever(input_str: str) -> str:
     Input should be a user's question.
     """
     print(f"\n>> Raw retriever input: '{input_str}'")
-    # This is a workaround for LLMs that wrap the Action Input in code-like syntax.
-    # It extracts the actual query from a string like `query="some query"`.
     match = re.search(r'query="([^"]*)"', input_str)
     if match:
         query = match.group(1)
@@ -66,19 +80,13 @@ def knowledge_base_retriever(input_str: str) -> str:
     if not os.path.exists(CHROMA_PERSIST_DIR):
         return f"Error: Knowledge base (ChromaDB) not found at '{CHROMA_PERSIST_DIR}'. Please run embed_db.py."
 
-    # Initialize components for retrieval
     embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
     vector_store = Chroma(
         persist_directory=CHROMA_PERSIST_DIR,
         embedding_function=embeddings
     )
-    # This retriever just fetches documents
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
-    
-    # Retrieve relevant documents
     docs = retriever.get_relevant_documents(query)
-    
-    # Format the documents into a single string
     return "\n\n".join(doc.page_content for doc in docs)
 
 def list_users() -> str:
@@ -108,7 +116,6 @@ def add_task(title: str, project_name: str, assignee_name: str, description: str
     if not conn:
         return "Error: Could not connect to the database."
 
-    # Validate project and user
     project_id = get_project_id_by_name(conn, project_name)
     if not project_id:
         return f"Error: Project '{project_name}' not found."
@@ -134,61 +141,88 @@ def add_task(title: str, project_name: str, assignee_name: str, description: str
         return f"Error adding task: {e}"
 
 
-# --- AGENT SETUP ---
-def main():
-    """
-    Sets up the agent and runs the main command-line interface loop.
-    """
-    print("--- Initializing The Crucible AI Agent ---")
+# --- AGENT INITIALIZATION AND INVOCATION ---
 
-    # Check for DB and Vector Store
+def initialize_agent():
+    """
+    Sets up the agent components (LLM, tools, prompt) and assigns the
+    created agent executor to the global 'agent_executor' variable.
+    This should be run once on application startup.
+    """
+    global agent_executor # Declare that we are modifying the global variable
+    print("--- Initializing The Crucible AI Agent ---")
+    
     if not os.path.exists(DB_FILE):
-        print(f"Error: Database file not found at '{DB_FILE}'. Please run setup_db.py first.")
+        print(f"FATAL ERROR: Database file not found at '{DB_FILE}'. Please run setup_db.py first.")
         sys.exit(1)
     if not os.path.exists(CHROMA_PERSIST_DIR):
-        print(f"Error: ChromaDB directory not found at '{CHROMA_PERSIST_DIR}'. Please run embed_db.py first.")
+        print(f"FATAL ERROR: ChromaDB directory not found at '{CHROMA_PERSIST_DIR}'. Please run embed_db.py first.")
         sys.exit(1)
 
-    # Initialize the LLM for the Agent
     try:
         llm = ChatOpenAI(
             base_url=LOCAL_LLM_URL, api_key=DUMMY_API_KEY, model=MODEL_NAME, temperature=0.2
         )
-        print("Successfully connected to local LLM server for the agent.")
+        print("Successfully connected to local LLM server.")
     except Exception as e:
-        print(f"Error connecting to LLM server: {e}")
+        print(f"FATAL ERROR: Could not connect to LLM server: {e}")
         sys.exit(1)
         
-    # Define all tools the agent can use
     tools = [
+        Tool(
+            name="Reply",
+            func=reply_to_user,
+            description="Use this tool for general conversation, greetings, or when no other tool is appropriate. The input should be your direct response to the user."
+        ),
         Tool(
             name="KnowledgeBaseRetriever",
             func=knowledge_base_retriever,
-            description="Use this to retrieve context about existing tasks, projects, status, or assignees from the project knowledge base. It's the best tool for answering general questions."
+            description="Use this to retrieve context about existing tasks, projects, status, or assignees from the project knowledge base. It's the best tool for answering specific questions about project data."
         ),
-        Tool(
-            name="ListUsers",
-            func=list_users,
-            description="Use this to get a list of all available users who can be assigned to tasks."
-        ),
-        Tool(
-            name="AddTask",
-            func=add_task,
-            description="Use this tool to create a new task. Requires a title, project_name, and assignee_name."
-        ),
+        Tool(name="ListUsers", func=list_users, description="Use this to get a list of all available users who can be assigned to tasks."),
+        Tool(name="AddTask", func=add_task, description="Use this tool to create a new task. Requires a title, project_name, and assignee_name."),
     ]
 
-    # Get the prompt template for the ReAct agent
     prompt = hub.pull("hwchase17/react")
-
-    # Create the agent
     agent = create_react_agent(llm, tools, prompt)
-
-    # Create the agent executor
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+    
+    # Assign the created executor directly to the global variable
+    agent_executor = AgentExecutor(
+        agent=agent, 
+        tools=tools, 
+        verbose=True, 
+        handle_parsing_errors="Please try again, paying close attention to the tool's instructions and formatting."
+    )
+    
     print("Agent initialized successfully.")
 
-    # --- MAIN CHAT LOOP ---
+def invoke_agent(query: str) -> str:
+    """
+    Invokes the agent with a given query and returns the final output string.
+    This is a SYNCHRONOUS function and should be run in a separate thread
+    in an async environment.
+    """
+    global agent_executor
+    if not agent_executor:
+        return "Error: Agent is not initialized. Please run initialize_agent() first."
+    
+    try:
+        print(f"Invoking agent with query: '{query}'")
+        result = agent_executor.invoke({"input": query})
+        return result.get('output', "Error: No output from agent.")
+    except Exception as e:
+        print(f"An error occurred during agent invocation: {e}")
+        return "Sorry, I encountered an error while processing your request."
+
+
+# --- MAIN CHAT LOOP FOR COMMAND-LINE TESTING ---
+def main():
+    """
+    Main function for command-line interaction.
+    Initializes the agent and then enters a chat loop.
+    """
+    initialize_agent()
+
     print("\n--- Agent Interface Ready ---")
     print("Ask about tasks, or ask to add a new task. Type 'exit' to end.")
     while True:
@@ -198,10 +232,9 @@ def main():
                 print("Exiting. Goodbye!")
                 break
             
-            # Invoke the agent executor
-            result = agent_executor.invoke({"input": query})
+            response = invoke_agent(query)
             
-            print(f"\nAgent: {result['output']}")
+            print(f"\nAgent: {response}")
 
         except KeyboardInterrupt:
             print("\nExiting. Goodbye!")
