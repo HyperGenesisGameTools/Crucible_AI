@@ -3,13 +3,13 @@ import os
 import asyncio
 from dotenv import load_dotenv
 
-# Import the functions from your refactored agent script
+# Import the functions and classes from your agent and memory scripts
 from merged_agent import initialize_agent, invoke_agent
+from prompt_context import PromptContext
 
 # --- DISCORD BOT SETUP ---
 
 # Load environment variables from a .env file
-# Create a file named .env and add the line: DISCORD_TOKEN=your_bot_token_here
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
@@ -24,6 +24,11 @@ intents.message_content = True
 
 client = discord.Client(intents=intents)
 
+# This dictionary will store a separate PromptContext object for each user.
+# The key will be the user's Discord ID, and the value will be the PromptContext instance.
+prompt_context_per_user = {}
+
+
 @client.event
 async def on_ready():
     """
@@ -31,8 +36,7 @@ async def on_ready():
     """
     print(f'Bot logged in as {client.user}')
     print('Initializing the Crucible AI Agent for Discord...')
-    # This calls the updated function, which sets the global agent
-    # executor variable inside the merged_agent module.
+    # Initialize the agent once on startup.
     initialize_agent()
     print('Crucible AI Agent is ready and listening.')
     print('---')
@@ -50,11 +54,27 @@ async def on_message(message):
     # 2. Check if the bot was mentioned in the message
     if client.user.mentioned_in(message):
         
+        user_id = message.author.id
+        
+        # 3. Get or create a PromptContext object for the user who sent the message.
+        if user_id not in prompt_context_per_user:
+            print(f"Creating new conversation context for user: {message.author.name} ({user_id})")
+            prompt_context_per_user[user_id] = PromptContext()
+            # Optional: You can set a default background briefing for a user's first interaction.
+            prompt_context_per_user[user_id].background_briefing = (
+                f"This is a conversation with the user named {message.author.name}. "
+                "The AI is a project management assistant named Crucible. "
+                "The user is likely a project manager."
+            )
+        
+        # Retrieve the specific context for this user.
+        user_context = prompt_context_per_user[user_id]
+        
         # Let the user know the bot is working on the request
         async with message.channel.typing():
             print(f"Received query from {message.author}: {message.content}")
 
-            # 3. Clean the message content to get the pure query.
+            # 4. Clean the message content to get the pure query.
             bot_display_name = f'@{client.user.name}'
             clean_query = message.clean_content.replace(bot_display_name, '').strip()
 
@@ -64,16 +84,20 @@ async def on_message(message):
 
             print(f"Cleaned query: '{clean_query}'")
             
-            # 4. Invoke the agent in a separate thread to avoid blocking
-            # This is the crucial fix for the "heartbeat blocked" error.
-            # It runs the synchronous `invoke_agent` function in the background.
+            # 5. Invoke the agent, passing the user's query and their unique context object.
             try:
-                agent_response = await asyncio.to_thread(invoke_agent, clean_query)
+                # Run the synchronous agent invocation in a separate thread.
+                agent_response = await asyncio.to_thread(invoke_agent, clean_query, user_context)
+
+                # 6. Update the user's current context with the latest exchange.
+                # This helps the agent remember the flow of this specific conversation.
+                user_context.current_context += f"\nUser: {clean_query}\nAI: {agent_response}"
+
             except Exception as e:
                 print(f"Error invoking agent via asyncio.to_thread: {e}")
                 agent_response = "I'm sorry, a critical error occurred while I was thinking."
 
-            # 5. Send the agent's response back to the Discord channel
+            # 7. Send the agent's response back to the Discord channel
             await message.channel.send(agent_response)
             print(f"Sent response to {message.author}")
             print("---")

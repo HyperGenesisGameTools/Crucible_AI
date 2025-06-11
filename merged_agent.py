@@ -1,3 +1,4 @@
+# merged_agent.py (Modified)
 import os
 import sys
 import sqlite3
@@ -10,7 +11,10 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from sqlite3 import Error
 
-# --- CONFIGURATION ---
+# Assume PromptContext class from the previous snippet is in a file named prompt_context.py
+from prompt_context import PromptContext
+
+# --- CONFIGURATION (remains the same) ---
 DB_FILE = "project_tasks.db"
 CHROMA_PERSIST_DIR = "./chroma_db"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -18,39 +22,20 @@ LOCAL_LLM_URL = "http://localhost:1234/v1"
 DUMMY_API_KEY = "lm-studio"
 MODEL_NAME = "local-model"
 
-# --- AGENT STATE ---
-# This will hold the initialized agent so it doesn't need to be reloaded.
+# --- AGENT STATE (remains the same) ---
 agent_executor = None
 
-# --- DATABASE HELPER FUNCTIONS ---
-
+# --- DATABASE HELPER FUNCTIONS (remains the same) ---
 def create_connection(db_file):
-    """Create a database connection to the SQLite database."""
     conn = None
     try:
-        # Allow multithreaded access for web frameworks/bots
         conn = sqlite3.connect(db_file, check_same_thread=False)
         conn.row_factory = sqlite3.Row
     except Error as e:
         print(f"Error connecting to database: {e}")
     return conn
 
-def get_project_id_by_name(conn, project_name):
-    """Finds a project's ID by its name."""
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM projects WHERE name = ?", (project_name,))
-    result = cursor.fetchone()
-    return result['id'] if result else None
-
-def get_user_id_by_name(conn, user_name):
-    """Finds a user's ID by their name."""
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE name = ?", (user_name,))
-    result = cursor.fetchone()
-    return result['id'] if result else None
-
-
-# --- AGENT TOOLS ---
+# ... (get_project_id_by_name, get_user_id_by_name, and all tools remain the same) ...
 
 def reply_to_user(message: str) -> str:
     """
@@ -141,15 +126,14 @@ def add_task(title: str, project_name: str, assignee_name: str, description: str
         return f"Error adding task: {e}"
 
 
-# --- AGENT INITIALIZATION AND INVOCATION ---
-
+# --- AGENT INITIALIZATION (remains the same) ---
 def initialize_agent():
     """
     Sets up the agent components (LLM, tools, prompt) and assigns the
     created agent executor to the global 'agent_executor' variable.
-    This should be run once on application startup.
     """
-    global agent_executor # Declare that we are modifying the global variable
+    global agent_executor
+    # ... (rest of the initialization function is unchanged) ...
     print("--- Initializing The Crucible AI Agent ---")
     
     if not os.path.exists(DB_FILE):
@@ -186,7 +170,6 @@ def initialize_agent():
     prompt = hub.pull("hwchase17/react")
     agent = create_react_agent(llm, tools, prompt)
     
-    # Assign the created executor directly to the global variable
     agent_executor = AgentExecutor(
         agent=agent, 
         tools=tools, 
@@ -196,32 +179,49 @@ def initialize_agent():
     
     print("Agent initialized successfully.")
 
-def invoke_agent(query: str) -> str:
+
+# --- MODIFIED AGENT INVOCATION ---
+
+def invoke_agent(query: str, context: PromptContext) -> str:
     """
-    Invokes the agent with a given query and returns the final output string.
-    This is a SYNCHRONOUS function and should be run in a separate thread
-    in an async environment.
+    Invokes the agent with a given query and context, returning the final output.
     """
     global agent_executor
     if not agent_executor:
         return "Error: Agent is not initialized. Please run initialize_agent() first."
     
+    # Format the context and prepend it to the user's query
+    context_str = context.format_for_prompt()
+    combined_input = f"{context_str}{query}"
+    
     try:
-        print(f"Invoking agent with query: '{query}'")
-        result = agent_executor.invoke({"input": query})
+        print(f"--- Invoking Agent with Combined Input ---")
+        print(combined_input)
+        print("-----------------------------------------")
+        
+        result = agent_executor.invoke({"input": combined_input})
+        
+        # You might want to update the context here based on the interaction
+        # For example, add the query and response to the current_context
+        # context.current_context += f"\nUser: {query}\nAI: {result.get('output')}"
+
         return result.get('output', "Error: No output from agent.")
     except Exception as e:
         print(f"An error occurred during agent invocation: {e}")
         return "Sorry, I encountered an error while processing your request."
 
-
-# --- MAIN CHAT LOOP FOR COMMAND-LINE TESTING ---
+# --- MAIN CHAT LOOP FOR COMMAND-LINE TESTING (MODIFIED) ---
 def main():
     """
     Main function for command-line interaction.
     Initializes the agent and then enters a chat loop.
     """
     initialize_agent()
+    
+    # Create a single PromptContext instance for the session
+    session_context = PromptContext()
+    # You could potentially pre-load the background briefing here
+    session_context.background_briefing = "The user is the project manager, ARCHITECT. The AI is Crucible, a helpful project management assistant."
 
     print("\n--- Agent Interface Ready ---")
     print("Ask about tasks, or ask to add a new task. Type 'exit' to end.")
@@ -232,7 +232,8 @@ def main():
                 print("Exiting. Goodbye!")
                 break
             
-            response = invoke_agent(query)
+            # Pass the query and the context object to the agent
+            response = invoke_agent(query, session_context)
             
             print(f"\nAgent: {response}")
 
@@ -243,6 +244,6 @@ def main():
             print(f"\nAn error occurred: {e}")
             break
 
-
 if __name__ == "__main__":
     main()
+
