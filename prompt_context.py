@@ -1,15 +1,32 @@
 # prompt_context.py
 
+from collections import deque
+
 class PromptContext:
     """
-    A simple data class to hold different layers of context for an agent's prompt.
+    A data class to hold different layers of context for an agent's prompt,
+    including a rolling window of the most recent conversation messages.
     """
-    def __init__(self):
+    def __init__(self, max_history_length: int = 5):
         """
-        Initializes the context holder with empty strings for background and current context.
+        Initializes the context holder.
+
+        Args:
+            max_history_length: The maximum number of user/AI message pairs
+                                to retain in the conversational history.
         """
         self.background_briefing: str = ""
-        self.current_context: str = ""
+        # Use a deque for efficient, rolling history.
+        # This will store the last `max_history_length` exchanges (user + AI messages).
+        self.history: deque[tuple[str, str]] = deque(maxlen=max_history_length * 2)
+
+    def add_exchange(self, user_query: str, ai_response: str):
+        """
+        Adds a user query and the corresponding AI response to the history,
+        maintaining the maximum history length.
+        """
+        self.history.append(("User", user_query))
+        self.history.append(("AI", ai_response))
 
     def format_for_prompt(self) -> str:
         """
@@ -22,8 +39,13 @@ class PromptContext:
         if self.background_briefing:
             full_context += f"--- Background Briefing ---\n{self.background_briefing}\n\n"
         
-        if self.current_context:
-            full_context += f"--- Current Context ---\n{self.current_context}\n\n"
+        if self.history:
+            # Format the recent history from the deque
+            history_str = "\n".join([f"{speaker}: {message}" for speaker, message in self.history])
+            # The deque's maxlen is in terms of individual messages (user or AI), 
+            # so we divide by 2 to get the number of exchanges.
+            history_header = f"--- Recent Conversation History (last {self.history.maxlen // 2} exchanges) ---"
+            full_context += f"{history_header}\n{history_str}\n\n"
 
         if full_context:
             return f"--- CONTEXT ---\n{full_context}--- USER QUERY ---\n"
@@ -32,8 +54,7 @@ class PromptContext:
 
     def clear(self):
         """
-        Resets both context attributes to empty strings.
+        Resets the background briefing and clears the history.
         """
         self.background_briefing = ""
-        self.current_context = ""
-
+        self.history.clear()

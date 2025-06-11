@@ -6,12 +6,15 @@ from dotenv import load_dotenv
 
 # Import the functions and classes from your agent and memory scripts
 from merged_agent import initialize_agent, invoke_agent, set_memory_queue
-from prompt_context import PromptContext
 from memory_manager import memory_worker
 
-# --- DISCORD BOT SETUP ---
+# --- NEW IMPORTS for Conversational Memory ---
+from langchain.memory import ConversationBufferWindowMemory
 
-# Load environment variables from a .env file
+# --- REMOVED ---
+# from prompt_context import PromptContext
+
+# --- DISCORD BOT SETUP ---
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
@@ -19,15 +22,14 @@ if not TOKEN:
     print("FATAL ERROR: DISCORD_TOKEN not found in .env file.")
     exit()
 
-# Define the intents your bot needs. The 'message_content' intent is crucial.
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 
 client = discord.Client(intents=intents)
 
-# This dictionary will store a separate PromptContext object for each user.
-prompt_context_per_user = {}
+# This dictionary will store a separate memory object for each user.
+memory_per_user = {}
 
 
 @client.event
@@ -36,8 +38,6 @@ async def on_ready():
     This function runs when the bot has successfully connected to Discord.
     """
     print(f'Bot logged in as {client.user}')
-    # The agent is now initialized in the main execution block
-    # to ensure it happens after the memory manager process is started.
     print('Crucible AI Agent is ready and listening.')
     print('---')
 
@@ -47,7 +47,7 @@ async def on_message(message):
     """
     This function runs for every new message received in any channel the bot can see.
     """
-    # 1. Ignore messages from the bot itself to prevent loops
+    # 1. Ignore messages from the bot itself
     if message.author == client.user:
         return
 
@@ -56,17 +56,16 @@ async def on_message(message):
         
         user_id = message.author.id
         
-        # 3. Get or create a PromptContext object for the user who sent the message.
-        if user_id not in prompt_context_per_user:
-            print(f"Creating new conversation context for user: {message.author.name} ({user_id})")
-            prompt_context_per_user[user_id] = PromptContext()
-            prompt_context_per_user[user_id].background_briefing = (
-                f"This is a conversation with the user named {message.author.name}. "
-                "The AI is a project management assistant named Crucible. "
-                "The user is likely a project manager."
+        # 3. Get or create a ConversationBufferWindowMemory object for the user.
+        if user_id not in memory_per_user:
+            print(f"Creating new conversation memory for user: {message.author.name} ({user_id})")
+            memory_per_user[user_id] = ConversationBufferWindowMemory(
+                k=5, # Keep the last 5 exchanges
+                memory_key="chat_history", # This must match the key in the prompt
+                return_messages=True # Ensure it returns message objects
             )
-        
-        user_context = prompt_context_per_user[user_id]
+
+        user_memory = memory_per_user[user_id]
         
         async with message.channel.typing():
             print(f"Received query from {message.author}: {message.content}")
@@ -81,13 +80,16 @@ async def on_message(message):
 
             print(f"Cleaned query: '{clean_query}'")
             
-            # 5. Invoke the agent, passing the user's query and their unique context object.
+            # 5. Invoke the agent, passing the user's query and their unique memory object.
             try:
                 # Run the synchronous agent invocation in a separate thread.
-                agent_response = await asyncio.to_thread(invoke_agent, clean_query, user_context)
+                agent_response = await asyncio.to_thread(invoke_agent, clean_query, user_memory)
 
-                # 6. Update the user's current context with the latest exchange.
-                user_context.current_context += f"\nUser: {clean_query}\nAI: {agent_response}"
+                # 6. Manually save the context to the memory object for the next turn
+                user_memory.save_context(
+                    {"input": clean_query},
+                    {"output": agent_response}
+                )
 
             except Exception as e:
                 print(f"Error invoking agent via asyncio.to_thread: {e}")
@@ -105,19 +107,16 @@ def main():
     """
     print("--- Starting Crucible AI System ---")
 
-    # Use 'spawn' start method for compatibility across platforms (macOS, Windows)
     try:
         multiprocessing.set_start_method('spawn', force=True)
         print("[Main] Set multiprocessing start method to 'spawn'.")
     except RuntimeError:
         print("[Main] Multiprocessing context already set.")
 
-
     # 1. Create the communication queue for the memory manager
     memory_update_queue = multiprocessing.Queue()
 
     # 2. Start the memory manager as a separate, long-running process
-    # The 'daemon=True' flag ensures it shuts down when the main script exits.
     manager_process = multiprocessing.Process(
         target=memory_worker,
         args=(memory_update_queue,),
@@ -131,7 +130,6 @@ def main():
     print("[Main] Memory update queue has been passed to the agent.")
 
     # 4. Initialize the agent's components (LLM, tools, etc.)
-    # This must happen in the main process after the queue is set.
     print("[Main] Initializing the Crucible AI Agent for Discord...")
     initialize_agent()
 
