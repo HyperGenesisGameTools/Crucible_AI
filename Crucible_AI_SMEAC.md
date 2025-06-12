@@ -1,48 +1,67 @@
-### **SMEAC: Operation COGNITIVE SHIELD (v2.0)**
+### **SMEAC: Operation FORGE & CRUCIBLE (v3.0)**
 
 ---
 
 #### **1. (S) Situation**
 
-**General:** This operation initiates the evolution of the Crucible AI project from a proof-of-concept local agent (V0.1) into a networked, user-centric personal assistant (V0.2). The operational environment expands from a single local machine to include the Discord platform, introducing network interactions and asynchronous communication.
+**General:** This operation marks a strategic pivot from direct feature development to meta-development. The project is now bifurcated into two distinct components:
+* **The Product (`Crucible AI`):** The Discord-based personal assistant. This is the application to be improved.
+* **The Developer (`Crucible Forge`):** A new, higher-order AI agent whose sole purpose is to automate the development, testing, and improvement of `Crucible AI`.
 
-**Adversary Forces:** The primary adversary remains the 48-hour time limit. Secondary adversaries have evolved and now include the complexities of asynchronous programming required for a Discord bot, potential network latency, API rate limits, and the challenge of designing and managing a more sophisticated, stateful memory system.
+The operational environment is a local file system containing the codebases for both agents.
 
-**Friendly Forces:** The operational team consists of ARCHITECT (sole developer) and GEMINI (AI Co-Developer). The team is strengthened by the successful completion of the first crucible, a proven collaborative workflow, and the stable V0.1 codebase which serves as a foundational asset.
+**Adversary Forces:** The primary adversary remains the time limit for establishing a functional proof-of-concept. Secondary adversaries include the complexity of creating robust agentic tools for file system interaction, shell command execution, and code analysis, as well as the challenge of crafting a sufficiently advanced prompt for the `Forge` agent to reason effectively about software development tasks.
 
-**Attachments/Detachments:** None. This is a self-contained operation.
+**Friendly Forces:** The operational team consists of ARCHITECT (sole human developer) and GEMINI (AI Co-Developer). Our primary asset is the existing, functional `Crucible AI` codebase, which now serves as the perfect testbed for the `Forge` agent. The team is bolstered by a clear architectural vision and a proven collaborative workflow.
+
+**Attachments/Detachments:** None.
 
 ---
 
 #### **2. (M) Mission**
 
-ARCHITECT, supported by GEMINI, will design, build, test, and document **Cognitive Shield (V0.2)** within a 48-hour period, commencing upon receipt of this order. The resulting agent will be a Discord-based personal assistant designed for cognitive offloading, capable of managing user tasks, lists, and reminders. It will feature a multi-component memory system for contextual conversation and implement an asynchronous Human-in-the-Loop (HITL) protocol for all database-modifying actions. The purpose is to produce a functional V0.2 prototype that provides tangible daily utility and validates a more advanced, networked agent architecture.
+Within a 48-hour period, ARCHITECT, supported by GEMINI, will design, build, and test a prototype of **`Crucible Forge`**. This developer agent will be capable of understanding a software development task, interacting with the file system and version control (Git), creating and running tests, and modifying the source code of the `Crucible AI` product to complete the assigned task. The purpose is to create a foundational meta-development system that can accelerate and eventually automate the evolution of the `Crucible AI` project.
 
 ---
 
 #### **3. (E) Execution**
 
-**a. Commander's Intent:** The intent is to produce a *useful* and *functional* prototype. The focus shifts from pure speed of development to the successful implementation of key user-centric features. The end state is an agent that can be reliably tasked via Discord to help a busy individual manage their daily cognitive load. The principle "Useful is better than perfect" will guide all decisions.
+**a. Commander's Intent:** The intent is to create a *functional developer agent*. The end state is a `Forge` agent that can be given a simple development task (e.g., "add a new tool to Crucible AI") and successfully execute the Test-Driven Development (TDD) cycle: create a failing test, write the code to make it pass, and commit the result to a feature branch. The principle "Function over polish" will guide all decisions; a raw but working toolset is the primary goal.
 
-**b. Concept of Operations (CONOPS):** This operation will be conducted in four phases, executed sequentially over the 48-hour period. The phases are designed to build upon each other, starting with establishing the new interface and culminating in a field-tested, documented agent.
-* **Phase I: The Bridge (Day 1: Hours 0-10):** Establish the agent's presence on Discord.
-* **Phase II: The Mind's Eye (Day 1: Hours 10-24):** Engineer the new memory architecture.
-* **Phase III: The Helping Hand (Day 2: Hours 24-40):** Build the core user-assistance tools.
-* **Phase IV: Field Test & Polish (Day 2: Hours 40-48):** Ensure stability and document the result.
+**b. Concept of Operations (CONOPS):** This operation will be conducted in four phases, focused on building the `Forge` agent and its capabilities.
+
+* **Phase I: The Architect (Day 1: Hours 0-4):** Restructure the project repository and establish the `Forge` agent's basic scaffolding.
+* **Phase II: The Toolkit (Day 1: Hours 4-18):** Develop the core agentic tools that allow the `Forge` to interact with its environment (read/write files, run shell commands).
+* **Phase III: The Mind (Day 1-2: Hours 18-36):** Engineer the `Forge`'s knowledge base and core prompt, enabling it to reason about the `Crucible AI` codebase.
+* **Phase IV: The First Commit (Day 2: Hours 36-48):** Conduct a live, end-to-end test where the `Forge` agent is tasked with making its first successful code modification to `Crucible AI`.
 
 **c. Scheme of Maneuver:**
 
-* **Block I: Discord Beachhead (Hours 0-3):** Establish a persistent connection to Discord, confirming basic two-way communication.
-* **Block II: Porting the Agent (Hours 3-10):** Integrate the V0.1 agent's core logic into the Discord bot, making its existing knowledge base available.
-* **Block III: Memory Architecture (Hours 10-24):** Design and implement the three-part memory system (Short-Term Prompt Context, Long-Term Vector DB, and the Memory Manager process).
-* **Block IV: Asynchronous HITL & New Tools (Hours 24-40):** Implement the emoji-based approval flow for actions and create the new tools for list and reminder management.
-* **Block V: Integration & Documentation (Hours 40-48):** Conduct end-to-end testing of all features and produce a comprehensive `README_V0.2.md` file.
+* **Block I: Project Restructuring (Hours 0-4):**
+    * Create the new directory structure: `/Product/` and `/Crucible Forge/`.
+    * Move all existing `Crucible AI` files into `/Product/`.
+    * Create the initial Python scripts for the `Forge` agent in `/Crucible Forge/`.
+
+* **Block II: Tool Development (Hours 4-18):**
+    * Implement and test robust agentic tools for file I/O (`read_file`, `write_file`, `list_files`).
+    * Implement and test a secure `run_shell_command` tool.
+    * Implement a tool to interface with GitHub Projects (`get_github_project_tasks`).
+
+* **Block III: Cognitive Engineering (Hours 18-36):**
+    * Create an embedding script for `Forge` that scans the *entire* project directory (both `/Product` and `/Crucible Forge`) and populates a vector store.
+    * Design the master prompt for the `Forge` agent, explicitly guiding it through the TDD workflow.
+
+* **Block IV: Integration & Live Test (Hours 36-48):**
+    * Integrate all components.
+    * Define a simple task (e.g., add a "hello world" tool to `Crucible AI`).
+    * Initiate a chat session with `Forge` and guide it through the entire TDD process, culminating in a `git commit`.
+    * Document the new architecture in a master `README.md` at the project root.
 
 **d. Coordinating Instructions:**
 
-* **Local-First Principle (v2.0):** The core agent logic, database, and vector store will remain on the user's local machine. The Discord bot acts as a remote interface to this user-owned and controlled instance.
-* **Asynchronous Human-in-the-Loop (HITL):** All agent actions that modify the database *must* use the asynchronous confirmation protocol (e.g., emoji reactions). Direct, unconfirmed writes are prohibited.
-* **Phase Completion:** A phase is considered complete only after the milestone for its final module is successfully tested and verified as per the "Operation: Cognitive Shield" development plan.
+* **Separation of Concerns:** `Crucible Forge` is the developer; `Crucible AI` is the product. The `Forge` agent will modify the files in `/Product/`, but will not interact directly with Discord.
+* **Scope of Knowledge:** The `Forge` agent's knowledge base (vector store) must encompass its own source code in addition to the product's code, enabling future self-improvement tasks.
+* **Human-in-the-Loop:** The human operator (ARCHITECT) initiates and guides the `Forge`'s development tasks through a conversational interface. The `Forge` is not yet autonomous.
 
 ---
 
@@ -50,36 +69,24 @@ ARCHITECT, supported by GEMINI, will design, build, test, and document **Cogniti
 
 **Administration:** Developer (ARCHITECT) is responsible for their own work/rest cycle and sustenance throughout the 48-hour operation.
 
-**Logistics:** Ensure the following resources ("The Arsenal") are staged and ready prior to H-Hour:
-* **Hardware:** A development machine with a minimum of 16GB RAM. A GPU is recommended.
-* **Software (Pre-installed/Downloaded):**
-  * Python 3.10+
-  * LM Studio (running and accessible).
-  * All packages from V0.1 `requirements.txt`.
-  * **New:** `discord.py` library.
-  * A properly configured `.env` file for storing secrets.
-* **Accounts & Keys:**
-  * A functional Google Account for collaboration with GEMINI.
-  * A Discord account with access to the Developer Portal.
-  * A new Discord Application with a Bot User created.
-  * The Bot Token, safely stored in the `.env` file.
+**Logistics:** The required arsenal remains largely the same, with an emphasis on the new structure.
+* **Hardware:** A development machine capable of running a Large Language Model locally. This requires a significant amount of RAM (16GB minimum, 32GB+ recommended) and a modern GPU for acceptable performance.
+* **Software:** Unchanged.
+* **Project Structure:** A clean Git repository with the new `/Product/` and `/Crucible Forge/` directory structure is the starting point.
 * **Assets:**
-  * The complete, functional V0.1 project code.
-  * The existing `project_tasks.db` SQLite database.
-  * The existing `chroma_db/` vector store.
-  * A pre-downloaded GGUF-compatible model loaded in LM Studio.
+    * The complete V0.2 `Crucible AI` codebase, relocated to `/Product/`.
+    * A new, empty `chroma_db/` directory will be created to house the source code embeddings for the `Forge` agent. The previous task-based vector database is now obsolete.
 
 ---
 
 #### **5. (C) Command & Signal**
 
 **Command:**
-* ARCHITECT is the operation commander and holds final decision-making authority on all implementation details.
-* GEMINI serves as the primary support and advisory element, tasked with accelerating development through code generation, strategic planning, and debugging.
+* ARCHITECT remains the operation commander, directing the `Forge` agent.
+* `Crucible Forge` is the primary acting agent, executing development tasks.
+* GEMINI serves as the primary support element for ARCHITECT in developing `Crucible Forge`.
 
 **Signal (Communications Plan):**
-* **Primary Command Channel:** Developer's direct interaction with the IDE and terminal.
-* **Primary User Interface Channel:** The Discord client.
+* **Primary Command Channel:** The command-line interface or chat UI for `Crucible Forge`.
 * **Primary Support Channel:** The Gemini web interface.
-* **Comms Discipline:** The practice of using separate, specialized chat threads with GEMINI for distinct operational tasks (e.g., "Discord Bot Logic," "Memory System Design") will be maintained to prevent context bleed.
-* **Mission Completion Signal:** The operation is concluded upon the successful completion and commit of the `README_V0.2.md` file and a demonstration of the agent running stably in Discord.
+* **Mission Completion Signal:** The operation is concluded upon the successful commit of a code change to the `/Product/` repository, executed entirely by the `Crucible Forge` agent under human supervision.
