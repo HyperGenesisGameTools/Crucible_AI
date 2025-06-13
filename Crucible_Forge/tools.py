@@ -2,6 +2,56 @@
 import os
 import subprocess
 from langchain.tools import tool
+from github import Github, GithubException
+
+@tool
+def get_github_project_tasks() -> str:
+    """
+    Fetches and lists all tasks from a pre-configured GitHub Project board.
+    This tool reads the repository and project number from environment variables.
+    Use this to get an overview of current development tasks.
+    """
+    token = os.getenv("GITHUB_TOKEN")
+    repo_name = os.getenv("GITHUB_REPO")
+    project_number = os.getenv("GITHUB_PROJECT_NUMBER")
+
+    if not all([token, repo_name, project_number]):
+        return "Error: GITHUB_TOKEN, GITHUB_REPO, and GITHUB_PROJECT_NUMBER must be set as environment variables."
+
+    try:
+        g = Github(token)
+        repo = g.get_repo(repo_name)
+        project = repo.get_project(int(project_number))
+    except GithubException as e:
+        return f"Error accessing GitHub. Please check your token, repo, and project number. Details: {e}"
+    except ValueError:
+        return "Error: GITHUB_PROJECT_NUMBER is not a valid integer."
+    except Exception as e:
+        return f"An unexpected error occurred: {e}"
+
+    output = f"Tasks for Project '{project.name}' in repository '{repo_name}':\n"
+    output += "=" * 50 + "\n"
+
+    try:
+        columns = project.get_columns()
+        if columns.totalCount == 0:
+            return f"{output}\nNo columns found in this project."
+
+        for column in columns:
+            output += f"\n--- Column: {column.name} ---\n"
+            cards = column.get_cards()
+            if cards.totalCount == 0:
+                output += "  (No tasks in this column)\n"
+            for card in cards:
+                # The note of a card is its main content for project automation
+                if card.note:
+                    task_title = card.note.strip().split('\n', 1)[0] # First line as title
+                    output += f"  - [Task] {task_title}\n"
+    except Exception as e:
+        return f"Error fetching project columns or cards: {e}"
+        
+    return output
+
 
 @tool
 def read_file(file_path: str) -> str:
