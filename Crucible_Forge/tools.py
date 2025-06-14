@@ -1,4 +1,4 @@
-# tools.py
+# hypergenesisgametools/crucible_ai/Crucible_AI-CmdToolUpgrade/Crucible_Forge/tools.py
 import os
 import subprocess
 import json
@@ -10,30 +10,25 @@ def get_github_project_tasks() -> str:
     """
     Fetches and lists all tasks from a pre-configured classic GitHub Project board.
     This tool reads the repository and project number from environment variables.
-    It returns a JSON string representing the project's columns and their tasks (cards),
-    which is easier for an LLM to parse and understand.
+    It returns a JSON string representing the project's columns and their tasks (cards).
     Use this to get an overview of current development tasks.
     """
     token = os.getenv("GITHUB_TOKEN")
     repo_name = os.getenv("GITHUB_REPO")
     project_number_str = os.getenv("GITHUB_PROJECT_NUMBER")
 
-    # --- Parameter Validation ---
     if not all([token, repo_name, project_number_str]):
         return json.dumps({
             "error": "Configuration missing",
             "message": "GITHUB_TOKEN, GITHUB_REPO, and GITHUB_PROJECT_NUMBER must be set as environment variables."
         })
-
     try:
         project_number = int(project_number_str)
     except (ValueError, TypeError):
         return json.dumps({
             "error": "Invalid Configuration",
-            "message": f"GITHUB_PROJECT_NUMBER must be a valid integer, but got '{project_number_str}'."
+            "message": f"GITHUB_PROJECT_NUMBER must be an integer, but got '{project_number_str}'."
         })
-
-    # --- GitHub API Interaction ---
     try:
         g = Github(token)
         repo = g.get_repo(repo_name)
@@ -42,60 +37,35 @@ def get_github_project_tasks() -> str:
     except GithubException as e:
         return json.dumps({
             "error": "GitHub API Error",
-            "message": f"Error accessing GitHub. Please check your token, repo, and project number. Details: {e.status} {e.data}"
+            "message": f"Error accessing GitHub. Details: {e.status} {e.data}"
         })
     except Exception as e:
         return json.dumps({"error": "Unexpected Error", "message": str(e)})
 
-    # --- Data Structuring ---
-    project_data = {
-        "projectName": project.name,
-        "repositoryName": repo_name,
-        "columns": []
-    }
-
+    project_data = {"projectName": project.name, "repositoryName": repo_name, "columns": []}
     try:
         columns = project.get_columns()
-        if columns.totalCount == 0:
-            print("No columns found in the project.")
-            return json.dumps(project_data, indent=2)
-
         for column in columns:
-            column_data = {
-                "columnName": column.name,
-                "tasks": []
-            }
-            cards = column.get_cards()
-            if cards.totalCount > 0:
-                for card in cards:
-                    if card.note:
-                        task_title = card.note.strip().split('\n', 1)[0]
-                        column_data["tasks"].append({
-                            "cardId": card.id,
-                            "taskTitle": task_title,
-                            "fullNote": card.note.strip()
-                        })
+            column_data = {"columnName": column.name, "tasks": []}
+            for card in column.get_cards():
+                if card.note:
+                    task_title = card.note.strip().split('\n', 1)[0]
+                    column_data["tasks"].append({"cardId": card.id, "taskTitle": task_title, "fullNote": card.note.strip()})
             project_data["columns"].append(column_data)
-
         return json.dumps(project_data, indent=2)
-
     except Exception as e:
-        return json.dumps({
-            "error": "Error Processing Project Data",
-            "message": f"An unexpected error occurred while fetching project columns or cards: {str(e)}"
-        })
-
+        return json.dumps({"error": "Error Processing Project Data", "message": str(e)})
 
 @tool
 def read_file(file_path: str) -> str:
     """
     Reads the entire content of a specified file and returns it as a string.
     Use this tool to inspect the content of existing files.
+    The input must be a dictionary: {"file_path": "path/to/your/file.py"}
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            return content
+            return f.read()
     except FileNotFoundError:
         return f"Error: The file '{file_path}' was not found."
     except Exception as e:
@@ -104,16 +74,14 @@ def read_file(file_path: str) -> str:
 @tool
 def write_file(file_path: str, content: str) -> str:
     """
-    Writes the given content to a specified file.
-    This will create the file if it does not exist and overwrite it if it does.
-    Use this tool to create new files or modify existing ones.
+    Writes content to a specified file, creating directories if they don't exist.
+    This overwrites the file if it already exists.
+    The input must be a dictionary: {"file_path": "path/to/file.txt", "content": "hello world"}
     """
     try:
-        # --- FIX: Only create directories if a path is specified ---
         directory = os.path.dirname(file_path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
         return f"Successfully wrote {len(content)} characters to '{file_path}'."
@@ -123,18 +91,20 @@ def write_file(file_path: str, content: str) -> str:
 @tool
 def list_files_recursive(directory: str) -> str:
     """
-    Walks a directory and returns a formatted string listing all files and subdirectories.
-    Use this tool to understand the structure of the codebase.
+    Lists all files and subdirectories within a given directory, returning a formatted string.
+    Use this to understand the structure of the codebase.
+    The input must be a dictionary: {"directory": "./some_folder"}
     """
     if not os.path.isdir(directory):
         return f"Error: The directory '{directory}' does not exist."
-
     try:
         output = f"File structure for '{directory}':\n"
         for root, dirs, files in os.walk(directory):
+            # Exclude common virtual environment and cache folders
+            dirs[:] = [d for d in dirs if d not in ['.git', '.venv', '__pycache__', 'node_modules']]
             level = root.replace(directory, '').count(os.sep)
-            indent = ' ' * 4 * (level)
-            output += f"{indent}{os.path.basename(root)}/\n"
+            indent = ' ' * 4 * level
+            output += f"{indent}{os.path.basename(root) or '.'}/\n"
             sub_indent = ' ' * 4 * (level + 1)
             for f in files:
                 output += f"{sub_indent}{f}\n"
@@ -145,25 +115,21 @@ def list_files_recursive(directory: str) -> str:
 @tool
 def run_shell_command(command: str) -> str:
     """
-    Executes a shell command AFTER receiving user confirmation.
-    Captures and returns the standard output and standard error.
+    Executes a shell command. Captures and returns stdout and stderr.
     This tool has a 60-second timeout.
-    Use this for executing system commands, like running tests or git operations.
+    Use this for non-interactive system commands like running tests ('pytest') or git operations.
+    THE HUMAN OPERATOR APPROVES COMMANDS VIA THE GUI; DO NOT ASK FOR CONFIRMATION.
+    The input must be a dictionary: {"command": "pytest -v"}
     """
-    # --- FIX: Added user confirmation prompt back in ---
-    print(f"\nPROPOSED COMMAND: {command}")
-    confirmation = input("Do you want to execute this command? (y/n): ")
-
-    if confirmation.lower() != 'y':
-        return "Command execution cancelled by user."
-
+    print(f"Executing command: '{command}'")
     try:
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
+            check=False  # Do not raise exception on non-zero exit codes
         )
         output = ""
         if result.stdout:
@@ -172,6 +138,8 @@ def run_shell_command(command: str) -> str:
             output += f"STDERR:\n{result.stderr}\n"
         if not output:
             output = "Command executed successfully with no output."
+        # Add exit code for better context
+        output += f"\nExit Code: {result.returncode}"
         return output
     except subprocess.TimeoutExpired:
         return "Error: Command timed out after 60 seconds."

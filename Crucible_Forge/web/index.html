@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crucible Forge - Mission Control</title>
-    <link rel="stylesheet" href="/Crucible_Forge/web/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap)" rel="stylesheet">
 </head>
 <body>
     <div id="app-container">
@@ -21,17 +21,25 @@
         <!-- MAIN CONTENT GRID -->
         <main id="main-grid">
 
-            <!-- LEFT PANEL: CONTROLS -->
+            <!-- LEFT PANEL: CONTROLS & OBSERVATION -->
             <aside id="left-panel">
-                <div class="panel-header">CONTROLS</div>
-                <div class="panel-content">
-                    <label for="goal-input">Development Goal:</label>
-                    <textarea id="goal-input" placeholder="e.g., Add a 'delete_task' tool to the Product agent..."></textarea>
-                    
-                    <div id="control-buttons">
-                        <button id="start-button">Generate Plan</button>
-                        <button id="execute-button" disabled>Approve & Execute</button>
-                        <button id="stop-button" class="danger">Stop Agent</button>
+                <div class="panel-section">
+                    <div class="panel-header">CONTROLS</div>
+                    <div class="panel-content">
+                        <label for="goal-input">Development Goal:</label>
+                        <textarea id="goal-input" placeholder="e.g., Add a 'delete_task' tool to the Product agent..."></textarea>
+                        
+                        <div id="control-buttons">
+                            <button id="generate-plan-button">Generate Master Plan</button>
+                            <button id="execute-step-button" disabled>Approve & Execute Next Step</button>
+                            <button id="stop-button" class="danger">Stop Agent</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section" id="observation-section">
+                    <div class="panel-header">LAST OBSERVATION</div>
+                    <div class="panel-content">
+                        <pre id="observation-output">System is ready. Enter a goal to begin.</pre>
                     </div>
                 </div>
             </aside>
@@ -39,20 +47,20 @@
             <!-- CENTER PANEL: LOGS & PLAN -->
             <section id="center-panel">
                 <div class="tabs">
-                    <button class="tab-link active" data-tab="log-view">Live Log</button>
-                    <button class="tab-link" data-tab="plan-view">Plan</button>
+                    <button class="tab-link active" data-tab="plan-view">Master Plan</button>
+                    <button class="tab-link" data-tab="log-view">Live Log</button>
                 </div>
                 
-                <div id="log-view" class="tab-content active">
-                     <div class="panel-header">AGENT LOG</div>
-                     <pre id="log-output">Welcome to Mission Control. Enter a goal and click 'Generate Plan' to begin.</pre>
-                </div>
-
-                <div id="plan-view" class="tab-content">
+                <div id="plan-view" class="tab-content active">
                     <div class="panel-header">EXECUTION PLAN</div>
                     <div id="plan-container">
                         <p>No plan has been generated yet.</p>
                     </div>
+                </div>
+
+                <div id="log-view" class="tab-content">
+                     <div class="panel-header">AGENT LOG</div>
+                     <pre id="log-output">Welcome to Mission Control.</pre>
                 </div>
             </section>
 
@@ -68,6 +76,6 @@
     </div>
 
     <!-- JAVASCRIPT -->
-    <script src="/Crucible_Forge/web/script.js"></script>
+    <script src="/static/script.js"></script>
 </body>
 </html>
