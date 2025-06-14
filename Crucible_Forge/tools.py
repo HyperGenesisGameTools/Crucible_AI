@@ -1,159 +1,179 @@
-# hypergenesisgametools/crucible_ai/Crucible_AI-dev/Crucible_Forge/agent.py
-
+# tools.py
+import os
+import subprocess
 import json
-import re  # Import the regular expression module
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.tools.render import render_text_description
-import tools as ForgeTools
+from langchain.tools import tool
+from github import Github, GithubException
 
-# --- CONFIGURATION ---
-LOCAL_LLM_URL = "http://localhost:1234/v1"
-DUMMY_API_KEY = "lm-studio"
-MODEL_NAME = "local-model" # Or your deepseek-coder model
-MODEL_TEMP = 0.2
-
-# --- GLOBAL AGENT COMPONENTS ---
-llm = None
-# --- FIX: Changed "run_shell" to "run_shell_command" to match the tool name ---
-available_tools = {
-    "list_files_recursive": ForgeTools.list_files_recursive,
-    "read_file": ForgeTools.read_file,
-    "write_file": ForgeTools.write_file,
-    "run_shell_command": ForgeTools.run_shell_command,
-    "get_github_project_tasks": ForgeTools.get_github_project_tasks
-}
-tool_descriptions = render_text_description(list(available_tools.values()))
-
-def initialize_agent():
-    """Initializes the LLM for the agent."""
-    global llm
-    print("[Agent] Initializing...")
-    llm = ChatOpenAI(base_url=LOCAL_LLM_URL, api_key=DUMMY_API_KEY, model=MODEL_NAME, temperature=MODEL_TEMP)
-    print("[Agent] Components loaded and ready.")
-
-def create_plan(goal: str, previous_observations: str = None) -> list:
+@tool
+def get_github_project_tasks() -> str:
     """
-    First 'turn': Takes a user goal and creates a structured plan.
-    If a previous plan failed, it takes the observations to create a new, revised plan.
+    Fetches and lists all tasks from a pre-configured classic GitHub Project board.
+    This tool reads the repository and project number from environment variables.
+    It returns a JSON string representing the project's columns and their tasks (cards),
+    which is easier for an LLM to parse and understand.
+    Use this to get an overview of current development tasks.
     """
-    print(f"\n--- 📝 Creating Plan for Goal: {goal} ---")
-    
-    planning_prompt_template = """
-    You are an expert AI software developer agent. Your task is to create a detailed, step-by-step plan to accomplish a given software development goal.
+    token = os.getenv("GITHUB_TOKEN")
+    repo_name = os.getenv("GITHUB_REPO")
+    project_number_str = os.getenv("GITHUB_PROJECT_NUMBER")
 
-    You must respond with a JSON array of "tasks". Each task is a dictionary with two keys: "tool_name" and "parameters".
-    The "tool_name" must be one of the available tools. The "parameters" is a dictionary of arguments for that tool.
-
-    Available Tools:
-    {tools}
-
-    Goal: {goal}
-    {observation_context}
-    
-    Based on the goal and any provided context from previous attempts, create a JSON plan to achieve the goal.
-    Ensure your plan follows a logical sequence. For new features, this means writing a failing test first, then writing the code to make it pass.
-    
-    Your response MUST be ONLY the JSON array of tasks, optionally wrapped in a single ```json code block. Do not include any other text.
-    """
-    
-    observation_context = ""
-    if previous_observations:
-        observation_context = f"A previous attempt failed. Use the following observations to create a new, corrected plan:\n{previous_observations}"
-
-    prompt = ChatPromptTemplate.from_template(planning_prompt_template)
-    
-    chain = prompt | llm
-    
-    response = chain.invoke({
-        "tools": tool_descriptions,
-        "goal": goal,
-        "observation_context": observation_context
-    })
-    
-    # The LLM often wraps its response in ```json ... ```. We need to extract the raw JSON.
-    response_content = response.content
-    print(f"Raw LLM response:\n{response_content}") # For debugging
-
-    # Use regex to find the content inside ```json ... ``` or just ``` ... ```
-    match = re.search(r'```(?:json)?\s*\n(.*?)\n\s*```', response_content, re.DOTALL)
-    if match:
-        # If we found a match, use the captured group
-        json_string = match.group(1).strip()
-    else:
-        # If no markdown block is found, assume the whole response is the JSON
-        json_string = response_content.strip()
+    # --- Parameter Validation ---
+    if not all([token, repo_name, project_number_str]):
+        return json.dumps({
+            "error": "Configuration missing",
+            "message": "GITHUB_TOKEN, GITHUB_REPO, and GITHUB_PROJECT_NUMBER must be set as environment variables."
+        })
 
     try:
-        plan = json.loads(json_string)
-        print("✅ Plan parsed successfully.")
-        return plan
-    except json.JSONDecodeError as e:
-        print(f"Error: Failed to decode the plan from the LLM. Cleaned string was:\n{json_string}")
-        return [{"tool_name": "error", "parameters": {"message": f"Invalid plan format: {e}"}}]
+        project_number = int(project_number_str)
+    except (ValueError, TypeError):
+        return json.dumps({
+            "error": "Invalid Configuration",
+            "message": f"GITHUB_PROJECT_NUMBER must be a valid integer, but got '{project_number_str}'."
+        })
+
+    # --- GitHub API Interaction ---
+    try:
+        g = Github(token)
+        repo = g.get_repo(repo_name)
+        project = repo.get_project(project_number)
+        print(f"Successfully connected to GitHub and found project '{project.name}'.")
+    except GithubException as e:
+        return json.dumps({
+            "error": "GitHub API Error",
+            "message": f"Error accessing GitHub. Please check your token, repo, and project number. Details: {e.status} {e.data}"
+        })
+    except Exception as e:
+        return json.dumps({"error": "Unexpected Error", "message": str(e)})
+
+    # --- Data Structuring ---
+    project_data = {
+        "projectName": project.name,
+        "repositoryName": repo_name,
+        "columns": []
+    }
+
+    try:
+        columns = project.get_columns()
+        if columns.totalCount == 0:
+            print("No columns found in the project.")
+            return json.dumps(project_data, indent=2)
+
+        for column in columns:
+            column_data = {
+                "columnName": column.name,
+                "tasks": []
+            }
+            cards = column.get_cards()
+            if cards.totalCount > 0:
+                for card in cards:
+                    if card.note:
+                        task_title = card.note.strip().split('\n', 1)[0]
+                        column_data["tasks"].append({
+                            "cardId": card.id,
+                            "taskTitle": task_title,
+                            "fullNote": card.note.strip()
+                        })
+            project_data["columns"].append(column_data)
+
+        return json.dumps(project_data, indent=2)
+
+    except Exception as e:
+        return json.dumps({
+            "error": "Error Processing Project Data",
+            "message": f"An unexpected error occurred while fetching project columns or cards: {str(e)}"
+        })
 
 
-def execute_plan(plan: list) -> (bool, str):
+@tool
+def read_file(file_path: str) -> str:
     """
-    Second 'turn': Executes the plan sequentially and gathers observations.
-    Returns a tuple of (plan_succeeded, all_observations_string).
+    Reads the entire content of a specified file and returns it as a string.
+    Use this tool to inspect the content of existing files.
     """
-    print("\n--- 🚀 Executing Plan ---")
-    all_observations = []
-    
-    if not plan or not isinstance(plan, list):
-        return False, "Execution failed: The plan was empty or invalid."
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            return content
+    except FileNotFoundError:
+        return f"Error: The file '{file_path}' was not found."
+    except Exception as e:
+        return f"An unexpected error occurred while reading the file: {e}"
 
-    for i, task in enumerate(plan):
-        print(f"  - Task {i+1}/{len(plan)}: {task['tool_name']}({task.get('parameters', {})})")
+@tool
+def write_file(file_path: str, content: str) -> str:
+    """
+    Writes the given content to a specified file.
+    This will create the file if it does not exist and overwrite it if it does.
+    Use this tool to create new files or modify existing ones.
+    """
+    try:
+        # --- FIX: Only create directories if a path is specified ---
+        directory = os.path.dirname(file_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         
-        tool_to_run = available_tools.get(task["tool_name"])
-        if not tool_to_run:
-            observation = f"Error: Tool '{task['tool_name']}' not found."
-            all_observations.append(observation)
-            print(f"    -> Observation: {observation}")
-            return False, "\n".join(all_observations) # Halt on critical error
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return f"Successfully wrote {len(content)} characters to '{file_path}'."
+    except Exception as e:
+        return f"An unexpected error occurred while writing to the file: {e}"
 
-        try:
-            # Use .get('parameters', {}) to avoid errors if parameters are missing
-            observation = tool_to_run.invoke(task.get('parameters', {}))
-            all_observations.append(observation)
-            # Print a snippet of the observation for brevity
-            print(f"    -> Observation (start): {str(observation)[:200]}...")
-        except Exception as e:
-            observation = f"Error executing tool '{task['tool_name']}': {e}"
-            all_observations.append(observation)
-            print(f"    -> Observation: {observation}")
-            return False, "\n".join(all_observations) # Halt on execution error
-            
-    print("✅ Plan execution complete.")
-    return True, "\n".join(all_observations)
-
-def evaluate_results(goal: str, observations: str) -> bool:
+@tool
+def list_files_recursive(directory: str) -> str:
     """
-    Final 'turn': Evaluates if the goal was met based on the observations.
+    Walks a directory and returns a formatted string listing all files and subdirectories.
+    Use this tool to understand the structure of the codebase.
     """
-    print("\n--- 🤔 Evaluating Results ---")
-    
-    evaluation_prompt_template = """
-    You are an expert AI software developer agent. You have just executed a plan to achieve a goal.
-    Your task is to analyze the observations from the execution and determine if the goal was successfully met.
-    The most important observation is usually the output of the final test run. If all tests pass, the goal is likely met.
+    if not os.path.isdir(directory):
+        return f"Error: The directory '{directory}' does not exist."
 
-    Goal: {goal}
-    
-    Observations from executed plan:
-    ---
-    {observations}
-    ---
+    try:
+        output = f"File structure for '{directory}':\n"
+        for root, dirs, files in os.walk(directory):
+            level = root.replace(directory, '').count(os.sep)
+            indent = ' ' * 4 * (level)
+            output += f"{indent}{os.path.basename(root)}/\n"
+            sub_indent = ' ' * 4 * (level + 1)
+            for f in files:
+                output += f"{sub_indent}{f}\n"
+        return output
+    except Exception as e:
+        return f"An unexpected error occurred while listing the files: {e}"
 
-    Based on the observations, did the plan successfully achieve the goal?
-    Respond with only the word "SUCCESS" or "FAILURE".
+@tool
+def run_shell_command(command: str) -> str:
     """
-    prompt = ChatPromptTemplate.from_template(evaluation_prompt_template)
-    chain = prompt | llm
-    response = chain.invoke({"goal": goal, "observations": observations})
-    
-    result = response.content.strip().upper()
-    print(f"✅ Evaluation complete. Result: {result}")
-    return result == "SUCCESS"
+    Executes a shell command AFTER receiving user confirmation.
+    Captures and returns the standard output and standard error.
+    This tool has a 60-second timeout.
+    Use this for executing system commands, like running tests or git operations.
+    """
+    # --- FIX: Added user confirmation prompt back in ---
+    print(f"\nPROPOSED COMMAND: {command}")
+    confirmation = input("Do you want to execute this command? (y/n): ")
+
+    if confirmation.lower() != 'y':
+        return "Command execution cancelled by user."
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        output = ""
+        if result.stdout:
+            output += f"STDOUT:\n{result.stdout}\n"
+        if result.stderr:
+            output += f"STDERR:\n{result.stderr}\n"
+        if not output:
+            output = "Command executed successfully with no output."
+        return output
+    except subprocess.TimeoutExpired:
+        return "Error: Command timed out after 60 seconds."
+    except Exception as e:
+        return f"An unexpected error occurred while executing the command: {e}"
