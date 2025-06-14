@@ -31,7 +31,6 @@ static_dir = os.path.join(os.path.dirname(__file__), 'web')
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # --- Agent State ---
-# This dictionary now holds the entire state of the agent's process
 agent_state = {
     "goal": None,
     "master_plan": [],
@@ -51,7 +50,6 @@ class ConnectionManager:
         self.active_connections.remove(websocket)
         logger.info("Client disconnected")
     async def broadcast(self, data: dict):
-        """Broadcasts a JSON message to all connected clients."""
         for connection in self.active_connections:
             await connection.send_json(data)
 
@@ -63,11 +61,8 @@ class GoalRequest(BaseModel):
 
 # --- Helper to broadcast state updates ---
 async def broadcast_state(event_type: str, message: str):
-    """Logs, sends a simple text message, and broadcasts the full agent state."""
     logger.info(message)
-    # Simple log message for the console/log view
     await manager.broadcast({"type": "log", "data": message})
-    # Full state update for the UI to react to
     await manager.broadcast({
         "type": event_type,
         "state": agent_state
@@ -75,7 +70,6 @@ async def broadcast_state(event_type: str, message: str):
 
 # --- Agent Logic Integration ---
 async def run_agent_planning(goal: str):
-    """Starts the agent by generating the initial master plan."""
     if agent_state["is_running"]:
         await manager.broadcast({"type": "log", "data": "Error: Agent is already running."})
         return
@@ -93,14 +87,14 @@ async def run_agent_planning(goal: str):
         plan = await asyncio.to_thread(CrucibleAgent.create_master_plan, goal)
         agent_state["master_plan"] = plan
         
+        agent_state["is_running"] = False
         await broadcast_state("plan_generated", "✅ Master Plan generated. Ready to execute first step.")
         
     except Exception as e:
         logger.error(f"Error during planning: {e}", exc_info=True)
         agent_state["last_observation"] = f"Error during planning: {e}"
+        agent_state["is_running"] = False
         await broadcast_state("error", f"❌ Error during planning: {e}")
-    finally:
-        agent_state["is_running"] = False # Ready for user to trigger step
 
 async def run_agent_next_step():
     """Runs the next step of the plan, gets an observation, and re-evaluates."""
@@ -135,18 +129,19 @@ async def run_agent_next_step():
         )
         agent_state["master_plan"] = new_plan
         
+        # FIX: Set is_running to False *before* the final broadcast for this action.
+        agent_state["is_running"] = False
         if agent_state["master_plan"]:
             await broadcast_state("plan_updated", "✅ Plan re-evaluated. Ready for next step.")
         else:
              await broadcast_state("plan_updated", "✅ Plan re-evaluated. All steps are now complete!")
 
-
     except Exception as e:
         logger.error(f"Error during agent cycle: {e}", exc_info=True)
         agent_state["last_observation"] = f"Error during execution: {e}"
-        await broadcast_state("error", f"❌ Error during execution: {e}")
-    finally:
+        # Also ensure is_running is false in case of an error
         agent_state["is_running"] = False
+        await broadcast_state("error", f"❌ Error during execution: {e}")
 
 
 # --- API Endpoints ---

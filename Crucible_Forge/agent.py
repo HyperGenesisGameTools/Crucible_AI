@@ -63,14 +63,11 @@ def create_master_plan(goal: str) -> list:
     """
     print(f"\n--- 📝 Creating Master Plan for Goal: {goal} ---")
     
-    # FIX: Removed the problematic example from the prompt that was causing a KeyError.
-    # The instructions are clear enough for the LLM without it.
     planning_prompt_template = """
     You are an expert AI software developer. Your task is to create a detailed, step-by-step plan to accomplish a given software development goal.
     You must respond with a JSON array of "tasks". Each task is a dictionary with "description" and "tool_call" keys.
     The "tool_call" dictionary must contain "tool_name" and "parameters" keys.
     The "tool_name" must be one of a specific list of available tools.
-    For complex coding tasks, you must plan to use the special `implement_feature_tdd` tool.
 
     Available Tools:
     {tools}
@@ -115,7 +112,6 @@ def execute_step(task: dict) -> str:
     print(f"  - Tool: {tool_name}({parameters})")
 
     if tool_name == "implement_feature_tdd":
-        # This is a complex, multi-step process handled by its own loop
         return _run_tdd_sub_loop(parameters.get('feature_description', 'No feature description provided.'))
 
     tool_to_run = available_tools.get(tool_name)
@@ -125,7 +121,6 @@ def execute_step(task: dict) -> str:
         return observation
 
     try:
-        # The `invoke` method now expects a dictionary of parameters
         observation = tool_to_run.invoke(parameters)
         print(f"    -> Observation (start): {str(observation)[:300]}...")
         return observation
@@ -145,18 +140,19 @@ def reevaluate_and_update_plan(goal: str, remaining_plan: list, last_observation
         print("✅ No remaining steps. Plan is complete.")
         return []
 
+    # FIX: A more explicit prompt to prevent the agent from repeating itself.
     reevaluation_prompt_template = """
-    You are an expert AI software developer. You are in the middle of executing a plan.
-    Based on the outcome of the last step, you must re-evaluate and regenerate the *remaining* steps of the plan.
+    You are an expert AI software developer, currently executing a multi-step plan.
+    Your task is to generate the *next* sequence of steps based on what just happened.
 
-    The overall goal is: {goal}
+    **Overall Goal:** {goal}
 
-    Here is the observation from the step that just completed:
+    **Last Action's Result (Observation):**
     ---
     {observation}
     ---
 
-    Here is the *old* plan for the remaining steps:
+    **Previously Remaining Plan (for context):**
     ---
     {old_plan}
     ---
@@ -169,10 +165,14 @@ def reevaluate_and_update_plan(goal: str, remaining_plan: list, last_observation
     Available Tools:
     {tools}
 
-    Generate a new, revised JSON array of tasks to achieve the goal based on the new information.
-    The new plan should intelligently adapt to the observation. For example, if you just read a file, the next step might be to modify it.
-    If the observation was an error, the new plan should focus on fixing that error.
-    Your response MUST be ONLY the JSON array of tasks.
+    **Your Instructions:**
+    1. Analyze the 'Observation'. This is the result of the step that just finished.
+    2. Look at the 'Previously Remaining Plan' for context on what you originally intended to do.
+    3. Generate a NEW, REVISED plan for the *remaining* tasks.
+    4. **Crucially, do not repeat the action that produced the current observation.** If the observation shows the contents of a file, your next step must be to process or modify that file, not to read it again.
+    5. If the observation is an error, your new plan's first step must be to fix that error.
+
+    Your response MUST be ONLY the JSON array of new tasks.
     """
     
     prompt = ChatPromptTemplate.from_template(reevaluation_prompt_template)
@@ -197,22 +197,10 @@ def reevaluate_and_update_plan(goal: str, remaining_plan: list, last_observation
 def _run_tdd_sub_loop(feature_description: str) -> str:
     """
     A specialized sub-loop for implementing code changes using Test-Driven Development.
-    This is a complex, multi-step process within a single "execute_step" phase.
     """
     print(f"\n--- TDD Sub-Loop Started: {feature_description} ---")
     
-    # This is a simplified placeholder. A real implementation would be more complex,
-    # involving multiple LLM calls to:
-    # 1. Identify relevant files to read.
-    # 2. Read those files using the 'read_file' tool.
-    # 3. Generate a failing test based on the feature description.
-    # 4. Write that test to a file using 'write_file'.
-    # 5. Run pytest using 'run_shell_command' and analyze the failure.
-    # 6. Enter a loop of generating implementation code, writing it, and re-running tests until they pass.
-    
-    # For now, we simulate this process and return a success message.
-    # This logic would be built out with more specific prompts and control flow.
-    
+    # This is a simplified placeholder. A real implementation would be more complex.
     context = f"TDD process for '{feature_description}'"
     print("  [TDD] Step 1: Identifying relevant files (Simulated)")
     
@@ -226,14 +214,13 @@ def _run_tdd_sub_loop(feature_description: str) -> str:
     print(f"  [TDD]  -> {test_obs}")
     
     print("  [TDD] Step 4: Implementing feature to pass test (Simulated)")
-    # In a real scenario, an LLM call would generate this code
     implementation_code = "# New feature code\ndef new_feature():\n  return True"
     write_impl_obs = ForgeTools.write_file.invoke({"file_path": "./Product/new_feature.py", "content": implementation_code})
     print(f"  [TDD]  -> {write_impl_obs}")
 
     print("  [TDD] Step 5: Running tests to confirm success (Simulated)")
     final_test_obs = ForgeTools.run_shell_command.invoke({"command": "echo 'pytest output: 1 passed in 0.02s'"})
-    print(f"  [TDD]  -> {final_test_obs}")
+    print(f"  [TD]  -> {final_test_obs}")
     
     final_observation = f"SUCCESS: TDD sub-loop completed for '{feature_description}'. New tests and implementation have been created and verified."
     print("--- TDD Sub-Loop Finished ---")
