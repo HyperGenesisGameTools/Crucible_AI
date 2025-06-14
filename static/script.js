@@ -12,11 +12,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusText = document.getElementById('status-text');
     const tabs = document.querySelectorAll('.tab-link');
     const tabContents = document.querySelectorAll('.tab-content');
+    const evaluationToggle = document.getElementById('evaluation-toggle');
 
     // --- State & Configuration ---
     const API_BASE_URL = 'http://localhost:8000';
     const WS_URL = 'ws://localhost:8000/ws/log';
     let socket = null;
+    let isEvaluationEnabled = true;
 
     // --- Functions ---
     const logMessage = (message, type = 'info') => {
@@ -76,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const params = toolCall.parameters ? JSON.stringify(toolCall.parameters, null, 2) : '{}';
 
             taskEl.innerHTML = `
+                <button class="rethink-button" data-task-index="${index}" title="Rethink this step">&#x21bb;</button>
                 <div class="task-header"><strong>${index === 0 ? 'NEXT STEP' : `Step ${index + 1}`}</strong>: <span class="task-description">${task.description}</span></div>
                 <div class="tool-call">
                     <span class="tool-name">${toolName}</span>
@@ -155,11 +158,31 @@ document.addEventListener('DOMContentLoaded', () => {
         executeStepButton.disabled = true;
 
         try {
-            await fetch(`${API_BASE_URL}/api/execute-next-step`, { method: 'POST' });
+            await fetch(`${API_BASE_URL}/api/execute-next-step`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enable_evaluation: isEvaluationEnabled })
+            });
         } catch (error) {
             logMessage(`Failed to execute step: ${error.message}`, 'error');
             setAgentStatus('error', 'Error');
             executeStepButton.disabled = false;
+        }
+    };
+    
+    const handleRethinkStep = async (taskIndex) => {
+        logMessage(`Requesting rethink for step ${taskIndex + 1}...`, 'warning');
+        setAgentStatus('running', 'Rethinking');
+        
+        try {
+            await fetch(`${API_BASE_URL}/api/rethink-step`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_index: taskIndex }),
+            });
+        } catch (error) {
+            logMessage(`Failed to rethink step: ${error.message}`, 'error');
+            setAgentStatus('error', 'Error');
         }
     };
 
@@ -184,6 +207,18 @@ document.addEventListener('DOMContentLoaded', () => {
             tab.classList.add('active');
             document.getElementById(tab.dataset.tab).classList.add('active');
         });
+    });
+
+    planContainer.addEventListener('click', (e) => {
+        if (e.target.classList.contains('rethink-button')) {
+            const taskIndex = parseInt(e.target.dataset.taskIndex, 10);
+            handleRethinkStep(taskIndex);
+        }
+    });
+
+    evaluationToggle.addEventListener('change', (e) => {
+        isEvaluationEnabled = e.target.checked;
+        logMessage(`Re-evaluation step is now ${isEvaluationEnabled ? 'ENABLED' : 'DISABLED'}.`, 'info');
     });
 
     // --- Initialization ---

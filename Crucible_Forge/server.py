@@ -59,6 +59,12 @@ manager = ConnectionManager()
 class GoalRequest(BaseModel):
     goal: str
 
+class RethinkRequest(BaseModel):
+    task_index: int
+
+class ExecuteRequest(BaseModel):
+    enable_evaluation: bool = True
+
 # --- Helper to broadcast state updates ---
 async def broadcast_state(event_type: str, message: str):
     logger.info(message)
@@ -99,7 +105,7 @@ async def run_agent_planning(goal: str):
         agent_state["is_running"] = False
         await broadcast_state("error", f"❌ {error_msg}")
 
-async def run_agent_next_step():
+async def run_agent_next_step(enable_evaluation: bool = True):
     """Runs the next step of the plan, gets an observation, and re-evaluates."""
     if agent_state["is_running"]:
         await manager.broadcast({"type": "log", "data": "Error: Agent is already busy."})
@@ -123,16 +129,20 @@ async def run_agent_next_step():
         
         await broadcast_state("observation", f"🔭 Observation received.")
         
-        # 2. RE-EVALUATE
-        await broadcast_state("status_update", "🤔 Re-evaluating remaining plan...")
-        
-        new_plan = await asyncio.to_thread(
-            CrucibleAgent.reevaluate_and_update_plan,
-            goal=agent_state["goal"],
-            remaining_plan=agent_state["master_plan"],
-            observation_history=agent_state["observation_history"]
-        )
-        agent_state["master_plan"] = new_plan
+        # 2. RE-EVALUATE (Conditional)
+        if enable_evaluation:
+            await broadcast_state("status_update", "🤔 Re-evaluating remaining plan...")
+            
+            new_plan = await asyncio.to_thread(
+                CrucibleAgent.reevaluate_and_update_plan,
+                goal=agent_state["goal"],
+                remaining_plan=agent_state["master_plan"],
+                observation_history=agent_state["observation_history"]
+            )
+            agent_state["master_plan"] = new_plan
+        else:
+            await broadcast_state("status_update", "Skipping re-evaluation as per user setting.")
+
         
         agent_state["is_running"] = False
         if agent_state["master_plan"]:
@@ -143,6 +153,43 @@ async def run_agent_next_step():
     except Exception as e:
         logger.error(f"Error during agent cycle: {e}", exc_info=True)
         error_msg = f"Error during execution: {e}"
+        agent_state["observation_history"].append(error_msg)
+        if len(agent_state["observation_history"]) > 5:
+            agent_state["observation_history"].pop(0)
+        agent_state["is_running"] = False
+        await broadcast_state("error", f"❌ {error_msg}")
+
+
+async def run_agent_rethink_step(task_index: int):
+    if agent_state["is_running"]:
+        await manager.broadcast({"type": "log", "data": "Error: Agent is already busy."})
+        return
+
+    if not agent_state["master_plan"] or task_index >= len(agent_state["master_plan"]):
+        await broadcast_state("error", "Error: Invalid task index for rethink.")
+        return
+        
+    agent_state["is_running"] = True
+    
+    try:
+        await broadcast_state("status_update", f"🤔 Rethinking step {task_index + 1}...")
+        
+        new_plan_segment = await asyncio.to_thread(
+            CrucibleAgent.rethink_single_step,
+            goal=agent_state["goal"],
+            full_plan=agent_state["master_plan"],
+            task_index_to_rethink=task_index,
+            observation_history=agent_state["observation_history"]
+        )
+        
+        agent_state["master_plan"] = agent_state["master_plan"][:task_index] + new_plan_segment + agent_state["master_plan"][task_index+1:]
+
+        agent_state["is_running"] = False
+        await broadcast_state("plan_updated", f"✅ Step {task_index + 1} re-evaluated. Plan updated.")
+
+    except Exception as e:
+        logger.error(f"Error during rethink: {e}", exc_info=True)
+        error_msg = f"Error during rethink: {e}"
         agent_state["observation_history"].append(error_msg)
         if len(agent_state["observation_history"]) > 5:
             agent_state["observation_history"].pop(0)
@@ -162,12 +209,21 @@ async def start_agent_endpoint(request: GoalRequest):
     return {"message": "Agent planning process initiated. See logs for progress."}
 
 @app.post("/api/execute-next-step")
-async def execute_next_step_endpoint():
+async def execute_next_step_endpoint(request: ExecuteRequest):
     """Executes the next step of the current plan."""
     if agent_state["is_running"]:
         return {"error": "Agent is already running a step."}
-    asyncio.create_task(run_agent_next_step())
+    asyncio.create_task(run_agent_next_step(request.enable_evaluation))
     return {"message": "Agent execution of next step initiated."}
+
+@app.post("/api/rethink-step")
+async def rethink_step_endpoint(request: RethinkRequest):
+    """Rethinks a specific step in the plan."""
+    if agent_state["is_running"]:
+        return {"error": "Agent is already running a step."}
+    asyncio.create_task(run_agent_rethink_step(request.task_index))
+    return {"message": "Agent rethink process initiated."}
+
 
 @app.post("/api/stop-agent")
 async def stop_agent_endpoint():

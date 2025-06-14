@@ -203,6 +203,81 @@ def reevaluate_and_update_plan(goal: str, remaining_plan: list, observation_hist
         return remaining_plan
 
 
+def rethink_single_step(goal: str, full_plan: list, task_index_to_rethink: int, observation_history: list[str]) -> list:
+    """
+    Phase 3b: RETHINK a single step
+    Focuses on regenerating just one part of the plan based on latest observations or user request.
+    """
+    print(f"\n--- 🤔 Rethinking a single step in the plan (Index: {task_index_to_rethink}) ---")
+    
+    if task_index_to_rethink >= len(full_plan):
+        print("❌ Error: Invalid task index for rethink.")
+        return []
+
+    task_to_rethink = full_plan[task_index_to_rethink]
+    
+    rethink_prompt_template = """
+    You are an expert AI software developer. Your task is to rethink and regenerate a *single* step of a larger plan.
+    You must focus only on the step provided and generate a new version of it, which might be one or more new tasks.
+    Your response MUST be ONLY a JSON array of the new task(s), to replace the old one.
+
+    **Overall Goal:** {goal}
+
+    **Recent Observation History (for context):**
+    ---
+    {observation_history}
+    ---
+
+    **Full Plan (for context):**
+    ---
+    {full_plan}
+    ---
+    
+    **The Specific Task to Rethink:**
+    ---
+    {task_to_rethink}
+    ---
+
+    Your Primary Directive (Codebase Constitution):
+    ---
+    {constitution}
+    ---
+    
+    Available Tools:
+    {tools}
+
+    **Your Instructions:**
+    1. Analyze the 'Task to Rethink'.
+    2. Consider the 'Observation History' and the 'Overall Goal'.
+    3. Generate a new, improved version of ONLY that task. You can break it down into multiple smaller tasks if necessary.
+    4. Your output must be a valid JSON array of task objects.
+
+    Your response MUST be ONLY the JSON array of new tasks.
+    """
+    
+    prompt = ChatPromptTemplate.from_template(rethink_prompt_template)
+    chain = prompt | llm
+    
+    formatted_history = "\n".join([f"OBSERVATION {i+1}:\n{obs}" for i, obs in enumerate(observation_history)])
+    
+    response = chain.invoke({
+        "goal": goal,
+        "observation_history": formatted_history,
+        "full_plan": json.dumps(full_plan, indent=2),
+        "task_to_rethink": json.dumps(task_to_rethink, indent=2),
+        "constitution": codebase_constitution,
+        "tools": tool_descriptions,
+    })
+
+    new_task_segment = _safe_json_parse(response.content)
+    if new_task_segment is not None and isinstance(new_task_segment, list):
+        print("✅ Step re-evaluated and updated successfully.")
+        return new_task_segment
+    else:
+        print("❌ Failed to rethink the step. Returning the original step.")
+        return [task_to_rethink]
+
+
 def _run_tdd_sub_loop(feature_description: str) -> str:
     """
     A specialized sub-loop for implementing code changes using Test-Driven Development.
