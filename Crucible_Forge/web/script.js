@@ -12,9 +12,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabs = document.querySelectorAll('.tab-link');
     const tabContents = document.querySelectorAll('.tab-content');
 
-    // --- State ---
+    // --- State & Configuration ---
     let currentPlan = null;
     let socket = null;
+    const API_BASE_URL = 'http://localhost:8000'; // Define the server URL
+    const WS_URL = 'ws://localhost:8000/ws/log'; // Define the WebSocket URL
 
     // --- Functions ---
     const logMessage = (message, type = 'info') => {
@@ -30,8 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const connectWebSocket = () => {
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        socket = new WebSocket(`${wsProtocol}//${window.location.host}/ws/log`);
+        socket = new WebSocket(WS_URL);
 
         socket.onopen = () => {
             console.log('WebSocket connection established.');
@@ -105,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
         executeButton.disabled = true;
 
         try {
-            const response = await fetch('/api/start-agent', {
+            const response = await fetch(`${API_BASE_URL}/api/start-agent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ goal }),
@@ -134,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         executeButton.disabled = true;
 
         try {
-            const response = await fetch('/api/execute-plan', {
+            const response = await fetch(`${API_BASE_URL}/api/execute-plan`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ plan: currentPlan }),
@@ -156,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const stopAgent = async () => {
         logMessage('Stopping agent...', 'warning');
         try {
-             await fetch('/api/stop-agent', { method: 'POST' });
+             await fetch(`${API_BASE_URL}/api/stop-agent`, { method: 'POST' });
              setAgentStatus('idle', 'Stopped');
              startButton.disabled = false;
              executeButton.disabled = true;

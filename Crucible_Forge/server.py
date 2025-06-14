@@ -6,9 +6,11 @@ import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import agent as CrucibleAgent
+import tools as ForgeTools # <-- FIX: Import the tools module
 
 # --- Configuration ---
 logging.basicConfig(level=logging.INFO)
@@ -17,12 +19,28 @@ logger = logging.getLogger(__name__)
 # --- FastAPI App Initialization ---
 app = FastAPI()
 
+# --- Add CORS Middleware ---
+origins = [
+    "http://localhost",
+    "http://localhost:5500",
+    "http://localhost:8000",
+    "http://127.0.0.1:5500",
+    "http://127.0.0.1:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Mount the 'web' directory to serve static files (HTML, CSS, JS)
 static_dir = os.path.join(os.path.dirname(__file__), 'web')
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # --- Agent State ---
-# This dictionary will hold the state for the current agent run
 agent_state = {
     "plan": None,
     "observations": None,
@@ -65,7 +83,6 @@ async def log_and_broadcast(message: str):
     logger.info(message)
     await manager.broadcast(message)
 
-# This function is a replacement for the original `main.py` loop
 async def run_agent_cycle(goal: str):
     """Runs a full Plan-Execute-Evaluate cycle for the agent."""
     if agent_state["is_running"]:
@@ -76,13 +93,10 @@ async def run_agent_cycle(goal: str):
     agent_state["goal"] = goal
     
     try:
-        # 1. Initialize Agent
         await log_and_broadcast("Initializing agent...")
-        # Note: initialize_agent() is synchronous, run it in a thread to avoid blocking
         await asyncio.to_thread(CrucibleAgent.initialize_agent)
         await log_and_broadcast("Agent initialized.")
 
-        # 2. Create Plan
         await log_and_broadcast(f"Creating plan for goal: {goal}")
         plan = await asyncio.to_thread(CrucibleAgent.create_plan, goal)
         agent_state["plan"] = plan
@@ -101,12 +115,7 @@ async def execute_agent_plan(plan: list):
         return
 
     try:
-        # 3. Execute Plan
         await log_and_broadcast("Executing approved plan...")
-        
-        # We need to wrap the synchronous execute_plan in a way that can broadcast logs.
-        # This is a bit complex. For now, we'll run it and get the final result.
-        # A more advanced version would require modifying the agent's tools to be async.
         plan_succeeded, observations = await asyncio.to_thread(CrucibleAgent.execute_plan, plan)
         agent_state["observations"] = observations
         
@@ -114,13 +123,11 @@ async def execute_agent_plan(plan: list):
         await log_and_broadcast(observations)
         await log_and_broadcast("--- End of Observations ---")
 
-
         if not plan_succeeded:
              await log_and_broadcast("Plan execution failed. Check observations for details.")
              agent_state["is_running"] = False
              return
         
-        # 4. Evaluate Results
         await log_and_broadcast("Evaluating results...")
         is_goal_achieved = await asyncio.to_thread(CrucibleAgent.evaluate_results, agent_state["goal"], observations)
         
@@ -145,7 +152,6 @@ async def read_root():
 @app.post("/api/start-agent")
 async def start_agent(request: GoalRequest):
     """Starts the agent planning cycle with a given goal."""
-    # Run the agent cycle in the background to not block the API response
     asyncio.create_task(run_agent_cycle(request.goal))
     return {"message": "Agent planning process initiated."}
 
@@ -160,7 +166,6 @@ async def execute_plan_endpoint(request: PlanRequest):
 @app.post("/api/stop-agent")
 async def stop_agent():
     """Stops the agent (basic implementation)."""
-    # Note: A real implementation would need to safely interrupt the running thread.
     agent_state["is_running"] = False
     await log_and_broadcast("Agent execution stopped by user.")
     return {"message": "Agent stopped."}
@@ -171,7 +176,8 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         # Send initial file structure
-        initial_files = CrucibleAgent.list_files_recursive.invoke({"directory": "."})
+        # FIX: Call the function from the correct module (ForgeTools)
+        initial_files = ForgeTools.list_files_recursive.invoke({"directory": "."})
         await websocket.send_text(json.dumps({"type": "file_structure", "data": initial_files}))
         
         while True:
@@ -179,8 +185,11 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Error in websocket endpoint: {e}")
+        await manager.broadcast(f"Server-side websocket error: {e}")
+
 
 # This allows running the server with `python server.py`
 if __name__ == "__main__":
-    # Note: Use `uvicorn Crucible_Forge.server:app --reload` for development
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
