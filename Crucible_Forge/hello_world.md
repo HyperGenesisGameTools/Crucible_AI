@@ -1,1 +1,0 @@
-[Smiley Face](:) Hello, World!
