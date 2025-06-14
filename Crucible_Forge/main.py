@@ -1,43 +1,64 @@
-# main.py
+# hypergenesisgametools/crucible_ai/Crucible_AI-dev/Crucible_Forge/main.py
 
-from agent import initialize_agent, invoke_agent
+import agent
+import json
 
 def main():
     """
     Main execution function for the Crucible Forge agent.
-    Initializes the agent and starts the interaction loop.
+    Initializes the agent and starts the Plan-Execute-Evaluate loop.
     """
     print("--- Starting Crucible Forge ---")
     
-    # 1. Initialize the agent's components (LLM, tools, prompt, etc.)
-    print("[Main] Initializing the Crucible Forge Agent...")
     try:
-        initialize_agent()
-        print("[Main] Agent initialized successfully.")
+        agent.initialize_agent()
     except Exception as e:
         print(f"[Main] FATAL ERROR: Could not initialize agent. Reason: {e}")
         return
 
-    # 2. Start the main application loop
     print("\n--- Crucible Forge is Ready ---")
-    print("You can now interact with the agent.")
     
-    try:
-        while True:
-            query = input("\nEnter your command: ")
-            if query.lower() in ["exit", "quit"]:
-                break
+    # Get the high-level goal from the user.
+    goal = input("Enter your high-level development goal: ")
+    
+    max_cycles = 5 # Safety break to prevent infinite loops
+    cycle_count = 0
+    observations = None # No observations on the first cycle
+    
+    while cycle_count < max_cycles:
+        cycle_count += 1
+        print(f"\n====================== CYCLE {cycle_count}/{max_cycles} ======================")
+        
+        # 1. PLAN
+        plan = agent.create_plan(goal, observations)
+        
+        # Let the user review and approve the plan before execution
+        print("\nGenerated Plan:")
+        print(json.dumps(plan, indent=2))
+        confirmation = input("Do you want to execute this plan? (y/n): ")
+        if confirmation.lower() != 'y':
+            print("Plan rejected by user. Shutting down.")
+            break
             
-            # 3. Invoke the agent with the user's query
-            response = invoke_agent(query)
-            print(f"\n[Agent Response]: {response}")
+        # 2. EXECUTE
+        plan_succeeded, observations = agent.execute_plan(plan)
+        
+        if not plan_succeeded:
+            print("\nPlan execution failed. The observations from the failed step will be used to create a new plan.")
+            continue # Skip evaluation and go to the next planning cycle
+            
+        # 3. EVALUATE
+        is_goal_achieved = agent.evaluate_results(goal, observations)
+        
+        if is_goal_achieved:
+            print("\n🎉 Goal achieved successfully! Shutting down.")
+            break
+        else:
+            print("\nGoal not yet achieved. The observations will be used to create a new plan.")
+            if cycle_count == max_cycles:
+                print("\nMaximum cycle limit reached. Shutting down.")
 
-    except KeyboardInterrupt:
-        print("\n[Main] User interrupted the session. Shutting down.")
-    except Exception as e:
-        print(f"\n[Main] An unexpected error occurred: {e}")
-    finally:
-        print("--- Crucible Forge Shutdown Complete ---")
+    print("\n--- Crucible Forge Shutdown Complete ---")
 
 
 if __name__ == "__main__":
