@@ -1,0 +1,234 @@
+/* --- Global Styles & Variables --- */
+:root {
+    --bg-dark: #1a1b26;
+    --bg-panel: #24283b;
+    --bg-panel-header: #1f2335;
+    --text-primary: #c0caf5;
+    --text-secondary: #a9b1d6;
+    --border-color: #414868;
+    --accent-blue: #7aa2f7;
+    --accent-green: #9ece6a;
+    --accent-red: #f7768e;
+    --accent-orange: #ff9e64;
+    --font-primary: 'Inter', sans-serif;
+    --font-mono: 'Roboto Mono', monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    font-family: var(--font-primary);
+    font-size: 16px;
+    line-height: 1.6;
+    overflow: hidden; /* Prevent body scrolling */
+}
+
+/* --- Main Layout --- */
+#app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+#app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background-color: var(--bg-panel-header);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+#app-header h1 {
+    font-size: 1.2rem;
+    color: var(--accent-blue);
+}
+
+#main-grid {
+    display: grid;
+    grid-template-columns: 300px 1fr 350px; /* Left, Center, Right panels */
+    gap: 10px;
+    padding: 10px;
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+/* --- Panel Styles --- */
+#left-panel, #center-panel, #right-panel {
+    background-color: var(--bg-panel);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Important for scrolling panels */
+}
+
+.panel-header {
+    background-color: var(--bg-panel-header);
+    padding: 8px 15px;
+    font-weight: bold;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.panel-content {
+    padding: 15px;
+    flex-grow: 1;
+    overflow-y: auto; /* Enable vertical scrolling */
+}
+
+/* --- Left Panel: Controls --- */
+#left-panel .panel-content {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+label {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+textarea#goal-input {
+    width: 100%;
+    height: 200px;
+    background-color: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 10px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+#control-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: auto; /* Push buttons to the bottom */
+}
+
+button {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    font-weight: 600;
+    font-family: var(--font-primary);
+    cursor: pointer;
+    transition: background-color 0.2s;
+    background-color: var(--accent-blue);
+    color: var(--bg-dark);
+}
+
+button:disabled {
+    background-color: #565f89;
+    color: #a9b1d6;
+    cursor: not-allowed;
+}
+
+button:not(:disabled):hover {
+    filter: brightness(1.2);
+}
+
+button.danger {
+    background-color: var(--accent-red);
+}
+
+/* --- Center Panel: Logs & Plan --- */
+.tabs {
+    display: flex;
+    background-color: var(--bg-panel-header);
+    border-bottom: 1px solid var(--border-color);
+}
+.tab-link {
+    padding: 10px 20px;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-weight: 600;
+    border-bottom: 3px solid transparent;
+}
+.tab-link.active {
+    color: var(--accent-blue);
+    border-bottom-color: var(--accent-blue);
+}
+.tab-content {
+    display: none;
+    flex-direction: column; /* Needed for header+content */
+    height: 100%;
+    overflow: hidden;
+}
+.tab-content.active {
+    display: flex;
+}
+#log-output, #file-explorer {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: var(--text-primary);
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 15px;
+}
+
+#plan-container {
+     padding: 15px;
+     overflow-y: auto;
+}
+.plan-task {
+    background-color: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+}
+.plan-task .tool-name {
+    color: var(--accent-green);
+    font-weight: bold;
+}
+.plan-task .params {
+    color: var(--accent-orange);
+}
+
+/* --- Agent Status Indicator --- */
+#agent-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-weight: 600;
+}
+#status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+#agent-status.status-idle #status-indicator { background-color: var(--accent-blue); }
+#agent-status.status-running #status-indicator {
+    background-color: var(--accent-orange);
+    animation: pulse 1.5s infinite;
+}
+#agent-status.status-success #status-indicator { background-color: var(--accent-green); }
+#agent-status.status-error #status-indicator { background-color: var(--accent-red); }
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.4; }
+    100% { opacity: 1; }
+}
+

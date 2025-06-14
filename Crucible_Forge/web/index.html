@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crucible Forge - Mission Control</title>
+    <link rel="stylesheet" href="/Crucible_Forge/web/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app-container">
+        <!-- HEADER -->
+        <header id="app-header">
+            <h1>Crucible Forge: Mission Control</h1>
+            <div id="agent-status" class="status-idle">
+                <span id="status-indicator"></span>
+                <span id="status-text">IDLE</span>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT GRID -->
+        <main id="main-grid">
+
+            <!-- LEFT PANEL: CONTROLS -->
+            <aside id="left-panel">
+                <div class="panel-header">CONTROLS</div>
+                <div class="panel-content">
+                    <label for="goal-input">Development Goal:</label>
+                    <textarea id="goal-input" placeholder="e.g., Add a 'delete_task' tool to the Product agent..."></textarea>
+                    
+                    <div id="control-buttons">
+                        <button id="start-button">Generate Plan</button>
+                        <button id="execute-button" disabled>Approve & Execute</button>
+                        <button id="stop-button" class="danger">Stop Agent</button>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- CENTER PANEL: LOGS & PLAN -->
+            <section id="center-panel">
+                <div class="tabs">
+                    <button class="tab-link active" data-tab="log-view">Live Log</button>
+                    <button class="tab-link" data-tab="plan-view">Plan</button>
+                </div>
+                
+                <div id="log-view" class="tab-content active">
+                     <div class="panel-header">AGENT LOG</div>
+                     <pre id="log-output">Welcome to Mission Control. Enter a goal and click 'Generate Plan' to begin.</pre>
+                </div>
+
+                <div id="plan-view" class="tab-content">
+                    <div class="panel-header">EXECUTION PLAN</div>
+                    <div id="plan-container">
+                        <p>No plan has been generated yet.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT PANEL: FILE SYSTEM -->
+            <aside id="right-panel">
+                <div class="panel-header">CODEBASE VIEW</div>
+                <div class="panel-content">
+                    <pre id="file-explorer">Connecting to agent...</pre>
+                </div>
+            </aside>
+
+        </main>
+    </div>
+
+    <!-- JAVASCRIPT -->
+    <script src="/static/script.js"></script>
+</body>
+</html>
