@@ -4,6 +4,44 @@ import subprocess
 import json
 from langchain.tools import tool
 from github import Github, GithubException
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
+# --- CONFIGURATION ---
+CHROMA_PERSIST_DIR = os.path.join(os.path.dirname(__file__), "codebase_chroma_db")
+EMBEDDING_MODEL = "all-MiniLM-L6-v2" # Should match embed_codebase.py
+
+@tool
+def search_codebase(query: str) -> str:
+    """
+    Searches the codebase vector store for relevant code snippets, documentation, or configuration.
+    Use this to understand how the project is built, find relevant functions, or check existing implementations before writing new code.
+    Input must be a specific question or search term about the code.
+    For example: {"query": "how is the database connection handled in merged_agent.py?"}
+    """
+    print(f"\n>> Searching Codebase for: '{query}'")
+    if not os.path.exists(CHROMA_PERSIST_DIR):
+        return f"Error: Codebase vector store not found at '{CHROMA_PERSIST_DIR}'. Please run embed_codebase.py first."
+    try:
+        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        vector_store = Chroma(persist_directory=CHROMA_PERSIST_DIR, embedding_function=embeddings)
+        retriever = vector_store.as_retriever(search_kwargs={"k": 5}) # Get top 5 results
+        docs = retriever.get_relevant_documents(query)
+        if not docs:
+            return "No relevant documents found in the codebase for that query."
+        
+        # Format the output for clarity
+        results = []
+        for doc in docs:
+            source = doc.metadata.get('source', 'Unknown source')
+            content_preview = doc.page_content[:350].strip()
+            if len(doc.page_content) > 350:
+                content_preview += "..."
+            results.append(f"--- From: {source} ---\n{content_preview}")
+        return "\n\n".join(results)
+
+    except Exception as e:
+        return f"An error occurred while searching the codebase: {e}"
 
 @tool
 def get_github_project_tasks() -> str:
@@ -75,7 +113,7 @@ def read_file(file_path: str) -> str:
 def write_file(file_path: str, content: str) -> str:
     """
     Writes content to a specified file, creating directories if they don't exist.
-    This overwrites the file if it already exists.
+    This overwrites the file if it already exists. This means you must provide the original content combined with new input.
     The input must be a dictionary: {"file_path": "path/to/file.txt", "content": "hello world"}
     """
     try:
@@ -101,7 +139,7 @@ def list_files_recursive(directory: str) -> str:
         output = f"File structure for '{directory}':\n"
         for root, dirs, files in os.walk(directory):
             # Exclude common virtual environment and cache folders
-            dirs[:] = [d for d in dirs if d not in ['.git', '.venv', '__pycache__', 'node_modules']]
+            dirs[:] = [d for d in dirs if d not in ['.git', '.venv', '__pycache__', 'node_modules', 'codebase_chroma_db']]
             level = root.replace(directory, '').count(os.sep)
             indent = ' ' * 4 * level
             output += f"{indent}{os.path.basename(root) or '.'}/\n"

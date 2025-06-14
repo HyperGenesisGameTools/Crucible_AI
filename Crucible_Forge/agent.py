@@ -15,6 +15,7 @@ MODEL_TEMP = 0.2
 # --- GLOBAL AGENT COMPONENTS ---
 llm = None
 tools_list = [
+    ForgeTools.search_codebase,
     ForgeTools.list_files_recursive,
     ForgeTools.read_file,
     ForgeTools.write_file,
@@ -68,6 +69,11 @@ def create_master_plan(goal: str) -> list:
     You must respond with a JSON array of "tasks". Each task is a dictionary with "description" and "tool_call" keys.
     The "tool_call" dictionary must contain "tool_name" and "parameters" keys.
     The "tool_name" must be one of a specific list of available tools.
+
+    **Strategy:**
+    1. First, use the `search_codebase` tool to understand the existing code relevant to the goal. This is critical for context.
+    2. Then, use `list_files_recursive` to verify file locations if needed.
+    3. Formulate the rest of your plan based on your findings (read, write, run tests, etc.).
 
     Available Tools:
     {tools}
@@ -129,10 +135,10 @@ def execute_step(task: dict) -> str:
         print(f"    -> Observation: {observation}")
         return observation
 
-def reevaluate_and_update_plan(goal: str, remaining_plan: list, last_observation: str) -> list:
+def reevaluate_and_update_plan(goal: str, remaining_plan: list, observation_history: list[str]) -> list:
     """
     Phase 3: RE-EVALUATE
-    Takes the most recent observation and refactors the rest of the plan.
+    Takes the most recent observations and refactors the rest of the plan.
     """
     print("\n--- 🤔 Re-evaluating and Updating Plan ---")
     
@@ -140,16 +146,15 @@ def reevaluate_and_update_plan(goal: str, remaining_plan: list, last_observation
         print("✅ No remaining steps. Plan is complete.")
         return []
 
-    # FIX: A more explicit prompt to prevent the agent from repeating itself.
     reevaluation_prompt_template = """
     You are an expert AI software developer, currently executing a multi-step plan.
     Your task is to generate the *next* sequence of steps based on what just happened.
 
     **Overall Goal:** {goal}
 
-    **Last Action's Result (Observation):**
+    **Recent Observation History (most recent is last):**
     ---
-    {observation}
+    {observation_history}
     ---
 
     **Previously Remaining Plan (for context):**
@@ -166,20 +171,24 @@ def reevaluate_and_update_plan(goal: str, remaining_plan: list, last_observation
     {tools}
 
     **Your Instructions:**
-    1. Analyze the 'Observation'. This is the result of the step that just finished.
-    2. Look at the 'Previously Remaining Plan' for context on what you originally intended to do.
-    3. Generate a NEW, REVISED plan for the *remaining* tasks.
-    4. **Crucially, do not repeat the action that produced the current observation.** If the observation shows the contents of a file, your next step must be to process or modify that file, not to read it again.
-    5. If the observation is an error, your new plan's first step must be to fix that error.
+    1. Analyze the 'Observation History'. This is the result of the last few steps. Pay closest attention to the most recent one.
+    2. If you need more context about the codebase, use the `search_codebase` tool.
+    3. Look at the 'Previously Remaining Plan' for context on what you originally intended to do.
+    4. Generate a NEW, REVISED plan for the *remaining* tasks.
+    5. **Crucially, do not repeat the action that produced the most recent observation.** If the last observation shows the contents of a file, your next step must be to process or modify that file, not to read it again.
+    6. If the most recent observation is an error, your new plan's first step must be to fix that error.
 
     Your response MUST be ONLY the JSON array of new tasks.
     """
     
     prompt = ChatPromptTemplate.from_template(reevaluation_prompt_template)
     chain = prompt | llm
+    
+    formatted_history = "\n".join([f"OBSERVATION {i+1}:\n{obs}" for i, obs in enumerate(observation_history)])
+    
     response = chain.invoke({
         "goal": goal,
-        "observation": last_observation,
+        "observation_history": formatted_history,
         "old_plan": json.dumps(remaining_plan, indent=2),
         "constitution": codebase_constitution,
         "tools": tool_descriptions,

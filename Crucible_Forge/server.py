@@ -28,13 +28,13 @@ app.add_middleware(
 )
 
 static_dir = os.path.join(os.path.dirname(__file__), 'web')
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__),'..', 'static')), name="static")
 
 # --- Agent State ---
 agent_state = {
     "goal": None,
     "master_plan": [],
-    "last_observation": "System is ready.",
+    "observation_history": ["System is ready."],
     "is_running": False
 }
 
@@ -77,7 +77,7 @@ async def run_agent_planning(goal: str):
     agent_state["is_running"] = True
     agent_state["goal"] = goal
     agent_state["master_plan"] = []
-    agent_state["last_observation"] = "Initializing..."
+    agent_state["observation_history"] = ["Initializing..."]
     
     try:
         await broadcast_state("status_update", "Initializing agent...")
@@ -92,9 +92,12 @@ async def run_agent_planning(goal: str):
         
     except Exception as e:
         logger.error(f"Error during planning: {e}", exc_info=True)
-        agent_state["last_observation"] = f"Error during planning: {e}"
+        error_msg = f"Error during planning: {e}"
+        agent_state["observation_history"].append(error_msg)
+        if len(agent_state["observation_history"]) > 5:
+            agent_state["observation_history"].pop(0)
         agent_state["is_running"] = False
-        await broadcast_state("error", f"❌ Error during planning: {e}")
+        await broadcast_state("error", f"❌ {error_msg}")
 
 async def run_agent_next_step():
     """Runs the next step of the plan, gets an observation, and re-evaluates."""
@@ -114,7 +117,9 @@ async def run_agent_next_step():
         await broadcast_state("status_update", f"🚀 Executing task: {task_to_execute.get('description')}")
         
         observation = await asyncio.to_thread(CrucibleAgent.execute_step, task_to_execute)
-        agent_state["last_observation"] = str(observation)
+        agent_state["observation_history"].append(str(observation))
+        if len(agent_state["observation_history"]) > 5:
+            agent_state["observation_history"].pop(0)
         
         await broadcast_state("observation", f"🔭 Observation received.")
         
@@ -125,11 +130,10 @@ async def run_agent_next_step():
             CrucibleAgent.reevaluate_and_update_plan,
             goal=agent_state["goal"],
             remaining_plan=agent_state["master_plan"],
-            last_observation=agent_state["last_observation"]
+            observation_history=agent_state["observation_history"]
         )
         agent_state["master_plan"] = new_plan
         
-        # FIX: Set is_running to False *before* the final broadcast for this action.
         agent_state["is_running"] = False
         if agent_state["master_plan"]:
             await broadcast_state("plan_updated", "✅ Plan re-evaluated. Ready for next step.")
@@ -138,10 +142,12 @@ async def run_agent_next_step():
 
     except Exception as e:
         logger.error(f"Error during agent cycle: {e}", exc_info=True)
-        agent_state["last_observation"] = f"Error during execution: {e}"
-        # Also ensure is_running is false in case of an error
+        error_msg = f"Error during execution: {e}"
+        agent_state["observation_history"].append(error_msg)
+        if len(agent_state["observation_history"]) > 5:
+            agent_state["observation_history"].pop(0)
         agent_state["is_running"] = False
-        await broadcast_state("error", f"❌ Error during execution: {e}")
+        await broadcast_state("error", f"❌ {error_msg}")
 
 
 # --- API Endpoints ---
@@ -152,7 +158,6 @@ async def read_root():
 @app.post("/api/generate-plan")
 async def start_agent_endpoint(request: GoalRequest):
     """Starts the agent planning cycle with a given goal."""
-    # Run in background so the HTTP request can return immediately
     asyncio.create_task(run_agent_planning(request.goal))
     return {"message": "Agent planning process initiated. See logs for progress."}
 
@@ -167,7 +172,6 @@ async def execute_next_step_endpoint():
 @app.post("/api/stop-agent")
 async def stop_agent_endpoint():
     """Stops the agent (basic implementation)."""
-    # This is a hard stop, could be improved with graceful shutdown
     agent_state["is_running"] = False
     agent_state["master_plan"] = []
     await broadcast_state("status_update", "Agent execution stopped by user. Plan cleared.")
@@ -178,13 +182,11 @@ async def stop_agent_endpoint():
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Send initial file structure and state on connect
         initial_files = ForgeTools.list_files_recursive.invoke({"directory": "."})
         await websocket.send_json({"type": "file_structure", "data": initial_files})
         await websocket.send_json({"type": "initial_state", "state": agent_state})
         
         while True:
-            # Keep connection alive, listening for any client messages (none expected)
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -192,4 +194,4 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"Error in websocket endpoint: {e}")
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=False)

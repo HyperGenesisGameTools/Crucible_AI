@@ -37,7 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
         displayPlan(state.master_plan || []);
         
         // Update Observation
-        observationOutput.textContent = state.last_observation || 'No observation yet.';
+        const history = state.observation_history || [];
+        const lastObservation = history.length > 0 ? history[history.length - 1] : 'System is ready.';
+        observationOutput.textContent = lastObservation;
         observationOutput.scrollTop = 0; // Scroll to top
 
         // Update Buttons
